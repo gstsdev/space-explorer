@@ -267,6 +267,12 @@ function PlanetRing({
             // it can never spill extra brightness onto the sphere the way a
             // real scene light would (Three.js has no per-object light
             // exclusion, which is why we're not using one for this anymore).
+            //
+            // Deliberately a hard edge, not softened: the sun's angular size
+            // from Saturn (~9.5 AU) is only ~0.056°, so the real penumbra
+            // works out to a fraction of a percent of Saturn's own radius —
+            // imperceptible at this scale. A stylized blur here would be
+            // less accurate than the sharp edge real photos actually show.
             .replace(
               "vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + reflectedLight.directSpecular + reflectedLight.indirectSpecular + totalEmissiveRadiance;",
               `vec3 toSun = normalize(sunDirection);
