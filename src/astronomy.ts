@@ -73,22 +73,45 @@ export type PlanetData = {
   radiusKm: number;
   semiMajorAxisKm: number;
   eccentricity: number;
+  rotationPeriodDays: number;
+  rotationDirection?: 1 | -1;
   textures?: PlanetTextures;
 };
 
-export const SUN_DATA = { id: "sun", color: "#ffcc66", radiusKm: SUN_RADIUS_KM };
+export const SUN_DATA = {
+  id: "sun",
+  color: "#ffcc66",
+  radiusKm: SUN_RADIUS_KM,
+};
 
 export const KM_PER_AU = 149_597_870.7;
 
 export const PLANETS: PlanetData[] = [
-  { id: "mercury", color: "#8c8c8c", radiusKm: 2439.7, semiMajorAxisKm: 57_909_050, eccentricity: 0.2056 },
-  { id: "venus", color: "#e0a96d", radiusKm: 6051.8, semiMajorAxisKm: 108_208_000, eccentricity: 0.0068 },
+  {
+    id: "mercury",
+    color: "#8c8c8c",
+    radiusKm: 2439.7,
+    semiMajorAxisKm: 57_909_050,
+    eccentricity: 0.2056,
+    rotationPeriodDays: 58.646,
+  },
+  {
+    id: "venus",
+    color: "#e0a96d",
+    radiusKm: 6051.8,
+    semiMajorAxisKm: 108_208_000,
+    eccentricity: 0.0068,
+    rotationPeriodDays: 243.025,
+    rotationDirection: -1, // Venus rotates retrograde relative to most planets
+  },
   {
     id: "earth",
     color: "#4d90fe",
     radiusKm: 6371,
     semiMajorAxisKm: 149_598_023,
     eccentricity: 0.0167,
+    rotationPeriodDays: 0.99726968,
+    rotationDirection: 1,
     textures: {
       map: "/textures/earth/map.jpg",
       normalMap: "/textures/earth/normal.png",
@@ -96,9 +119,45 @@ export const PLANETS: PlanetData[] = [
       nightMap: "/textures/earth/nightmap.jpg",
     },
   },
-  { id: "mars", color: "#c1440e", radiusKm: 3389.5, semiMajorAxisKm: 227_939_200, eccentricity: 0.0934 },
-  { id: "jupiter", color: "#d9b384", radiusKm: 69_911, semiMajorAxisKm: 778_479_000, eccentricity: 0.0489 },
-  { id: "saturn", color: "#e3c78a", radiusKm: 58_232, semiMajorAxisKm: 1_432_041_000, eccentricity: 0.0565 },
-  { id: "uranus", color: "#a8ddec", radiusKm: 25_362, semiMajorAxisKm: 2_867_043_000, eccentricity: 0.0457 },
-  { id: "neptune", color: "#4169c9", radiusKm: 24_622, semiMajorAxisKm: 4_514_953_000, eccentricity: 0.0113 },
+  {
+    id: "mars",
+    color: "#c1440e",
+    radiusKm: 3389.5,
+    semiMajorAxisKm: 227_939_200,
+    eccentricity: 0.0934,
+    rotationPeriodDays: 1.025957,
+  },
+  {
+    id: "jupiter",
+    color: "#d9b384",
+    radiusKm: 69_911,
+    semiMajorAxisKm: 778_479_000,
+    eccentricity: 0.0489,
+    rotationPeriodDays: 0.41354,
+  },
+  {
+    id: "saturn",
+    color: "#e3c78a",
+    radiusKm: 58_232,
+    semiMajorAxisKm: 1_432_041_000,
+    eccentricity: 0.0565,
+    rotationPeriodDays: 0.44401,
+  },
+  {
+    id: "uranus",
+    color: "#a8ddec",
+    radiusKm: 25_362,
+    semiMajorAxisKm: 2_867_043_000,
+    eccentricity: 0.0457,
+    rotationPeriodDays: 0.71833,
+    rotationDirection: -1, // Uranus rotates retrograde due to its extreme axial tilt
+  },
+  {
+    id: "neptune",
+    color: "#4169c9",
+    radiusKm: 24_622,
+    semiMajorAxisKm: 4_514_953_000,
+    eccentricity: 0.0113,
+    rotationPeriodDays: 0.67125,
+  },
 ];

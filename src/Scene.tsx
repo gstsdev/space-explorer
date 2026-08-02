@@ -158,7 +158,8 @@ type PlanetProps = {
   radius: number; // true-scale radius, in scene units
   semiMajorAxis: number; // true-scale orbit size, in scene units
   eccentricity: number; // 0 = circle, closer to 1 = more stretched-out ellipse
-  spinSpeed?: number;
+  rotationPeriodDays?: number;
+  rotationDirection?: 1 | -1;
   selected: boolean;
   textures?: PlanetTextures;
   onFocus: OnFocus;
@@ -170,7 +171,8 @@ function Planet({
   radius,
   semiMajorAxis,
   eccentricity,
-  spinSpeed = 0.5,
+  rotationPeriodDays = 1,
+  rotationDirection = 1,
   selected,
   textures,
   onFocus,
@@ -196,6 +198,8 @@ function Planet({
 
   const period = 2 * Math.PI * Math.sqrt(semiMajorAxis ** 3 / GM_SUN_SCALED);
   const semiMinorAxis = semiMajorAxis * Math.sqrt(1 - eccentricity ** 2);
+  const rotationRadiansPerSecond =
+    (2 * Math.PI * rotationDirection) / (rotationPeriodDays * 24 * 60 * 60);
   // Distance at which the body's angular size crosses the "readable" threshold.
   const switchDistance = radius / ANGULAR_THRESHOLD;
 
@@ -240,7 +244,8 @@ function Planet({
     if (mesh.current) {
       // Advance the surface spin using the shared simulation clock so changing
       // playback speed affects day/night cycle timing as expected.
-      mesh.current.rotation.y += spinSpeed * delta * simulation.speed;
+      mesh.current.rotation.y +=
+        rotationRadiansPerSecond * delta * simulation.speed;
 
       // Sun is always at the origin, so world-space direction to it is just
       // -position. Rotating that into this mesh's object space right here
@@ -468,6 +473,8 @@ export function Scene({ selectedId, onFocus }: { selectedId: string | null; onFo
           radius={planet.radiusKm * KM_TO_UNITS}
           semiMajorAxis={planet.semiMajorAxisKm * KM_TO_UNITS}
           eccentricity={planet.eccentricity}
+          rotationPeriodDays={planet.rotationPeriodDays}
+          rotationDirection={planet.rotationDirection}
           selected={selectedId === planet.id}
           textures={planet.textures}
           onFocus={onFocus}
