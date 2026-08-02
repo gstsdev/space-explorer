@@ -10,6 +10,16 @@ function formatPeriod(days: number) {
   return `${(days / 365.25).toFixed(1)} years`;
 }
 
+function formatRotationDirection(direction?: 1 | -1) {
+  if (direction === -1) return "Retrograde";
+  return "Prograde";
+}
+
+function formatAxialTilt(degrees?: number) {
+  if (degrees === undefined) return "—";
+  return `${degrees.toFixed(2)}°`;
+}
+
 const rowStyle: CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
@@ -52,7 +62,10 @@ export function StatsPanel({ selectedId }: { selectedId: string | null }) {
       }}
     >
       <div style={{ fontSize: 15, fontWeight: 700 }}>{capitalize(body.id)}</div>
-      <Stat label="Radius" value={`${Math.round(body.radiusKm).toLocaleString()} km`} />
+      <Stat
+        label="Radius"
+        value={`${Math.round(body.radiusKm).toLocaleString()} km`}
+      />
       {planet && (
         <>
           <Stat
@@ -60,7 +73,13 @@ export function StatsPanel({ selectedId }: { selectedId: string | null }) {
             value={`${(planet.semiMajorAxisKm / KM_PER_AU).toFixed(2)} AU`}
           />
           <Stat label="Eccentricity" value={planet.eccentricity.toFixed(4)} />
-          <Stat label="Orbital period" value={formatPeriod(orbitalPeriodDays(planet.semiMajorAxisKm))} />
+          <Stat
+            label="Orbital period"
+            value={formatPeriod(orbitalPeriodDays(planet.semiMajorAxisKm))}
+          />
+          <Stat label="Rotation period" value={formatPeriod(planet.rotationPeriodDays)} />
+          <Stat label="Rotation direction" value={formatRotationDirection(planet.rotationDirection)} />
+          <Stat label="Axial tilt" value={formatAxialTilt(planet.axialTiltDegrees)} />
         </>
       )}
       {!planet && <Stat label="Type" value="Star" />}
