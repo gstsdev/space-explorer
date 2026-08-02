@@ -238,7 +238,9 @@ function Planet({
     );
 
     if (mesh.current) {
-      mesh.current.rotation.y += spinSpeed * delta;
+      // Advance the surface spin using the shared simulation clock so changing
+      // playback speed affects day/night cycle timing as expected.
+      mesh.current.rotation.y += spinSpeed * delta * simulation.speed;
 
       // Sun is always at the origin, so world-space direction to it is just
       // -position. Rotating that into this mesh's object space right here
@@ -388,12 +390,11 @@ function Sun({ selected, onFocus }: { selected: boolean; onFocus: OnFocus }) {
   const selectionRing = useRef<Mesh>(null);
   const switchDistance = SUN_RADIUS / ANGULAR_THRESHOLD;
 
-  useFrame(
-    (_, delta) => {
-      if (mesh.current) mesh.current.rotation.y += 0.05 * delta;
-    },
-    FRAME_PRIORITY.updatePosition,
-  );
+  useFrame((_, delta) => {
+    // Sun's rotation should follow the simulation clock so its visible
+    // rotation speed matches the playback/time-scale control.
+    if (mesh.current) mesh.current.rotation.y += 0.05 * delta * simulation.speed;
+  }, FRAME_PRIORITY.updatePosition);
 
   // Runs after CameraRig — see the matching comment in Planet.
   useFrame((state) => {
