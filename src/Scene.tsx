@@ -1,7 +1,8 @@
-import { Suspense, useMemo, useRef } from "react";
+import { Suspense, useEffect, useMemo, useRef } from "react";
+import type { RefObject } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Billboard, Html, Line, useTexture } from "@react-three/drei";
-import { AdditiveBlending, MathUtils, ShaderMaterial } from "three";
+import { AdditiveBlending, MathUtils, Quaternion, ShaderMaterial, SRGBColorSpace, Vector3 } from "three";
 import type { Group, Mesh, Object3D } from "three";
 import type { ThreeEvent } from "@react-three/fiber";
 import {
@@ -73,8 +74,50 @@ type OnFocus = (target: Object3D, id: string) => void;
 // (not MeshStandardMaterial, used everywhere else) specifically because its
 // specular/shininess model is what specularMap textures — including the
 // classic "grayscale ocean mask" Earth specular maps — are authored for.
-function TexturedSurface({ textures }: { textures: PlanetTextures }) {
+//
+// nightMap (city lights) needs logic no built-in material has: emissive only
+// on the side facing away from the sun. Rather than write a lighting shader
+// from scratch, this extends Phong's own compiled shader via onBeforeCompile
+// — injecting a varying for the un-transformed (object-space) normal and a
+// sunDirection uniform (also object-space, so it's correct regardless of
+// this mesh's own spin — see Planet, where it's computed each frame from the
+// same rotation this mesh already applies to itself, no camera/world-matrix
+// timing to get wrong), then adding the night texture as emissive light
+// wherever that surface point faces away from the sun.
+function TexturedSurface({
+  textures,
+  sunDirection,
+}: {
+  textures: PlanetTextures;
+  sunDirection: RefObject<Vector3>;
+}) {
   const maps = useTexture(textures);
+  const mapsRef = useRef(maps);
+  // useTexture loads via a plain THREE.TextureLoader, which defaults every
+  // texture's colorSpace to linear (NoColorSpace) — correct for normalMap
+  // (direction data, not color), but wrong for the three photographic maps.
+  // Left as linear, a "near-black" pixel in nightMap (which should decode to
+  // close to zero) instead samples much brighter than authored, which is
+  // exactly what showed up as a "bright blue" glow across Earth's dark side.
+  useEffect(() => {
+    mapsRef.current.map.colorSpace = SRGBColorSpace;
+    mapsRef.current.map.needsUpdate = true;
+    if (mapsRef.current.specularMap) {
+      mapsRef.current.specularMap.colorSpace = SRGBColorSpace;
+      mapsRef.current.specularMap.needsUpdate = true;
+    }
+    if (mapsRef.current.nightMap) {
+      mapsRef.current.nightMap.colorSpace = SRGBColorSpace;
+      mapsRef.current.nightMap.needsUpdate = true;
+    }
+  }, [maps]);
+
+  const shaderUniforms = useRef<{ sunDirection: { value: Vector3 } } | null>(null);
+
+  useFrame(() => {
+    if (shaderUniforms.current) shaderUniforms.current.sunDirection.value.copy(sunDirection.current);
+  }, FRAME_PRIORITY.updateVisibility);
+
   return (
     <meshPhongMaterial
       map={maps.map}
@@ -82,6 +125,29 @@ function TexturedSurface({ textures }: { textures: PlanetTextures }) {
       specularMap={maps.specularMap}
       specular="#333333"
       shininess={15}
+      onBeforeCompile={(shader) => {
+        if (!maps.nightMap) return;
+
+        shader.uniforms.nightMap = { value: maps.nightMap };
+        shader.uniforms.sunDirection = { value: new Vector3(0, 0, 1) };
+        shaderUniforms.current = shader.uniforms as unknown as { sunDirection: { value: Vector3 } };
+
+        shader.vertexShader = shader.vertexShader
+          .replace("#include <common>", "#include <common>\nvarying vec3 vObjectNormal;")
+          .replace("#include <beginnormal_vertex>", "#include <beginnormal_vertex>\nvObjectNormal = objectNormal;");
+
+        shader.fragmentShader = shader.fragmentShader
+          .replace(
+            "#include <common>",
+            "#include <common>\nvarying vec3 vObjectNormal;\nuniform sampler2D nightMap;\nuniform vec3 sunDirection;",
+          )
+          .replace(
+            "#include <emissivemap_fragment>",
+            `#include <emissivemap_fragment>
+            float dayFactor = smoothstep(-0.15, 0.15, dot(normalize(vObjectNormal), normalize(sunDirection)));
+            totalEmissiveRadiance += texture2D(nightMap, vMapUv).rgb * (1.0 - dayFactor);`,
+          );
+      }}
     />
   );
 }
@@ -117,6 +183,13 @@ function Planet({
   // constant size on screen, like a marker on a map — until we're close
   // enough to see the real mesh, at which point we swap to that instead.
   const placeholder = useRef<Mesh>(null);
+  // Direction to the sun in this mesh's own OBJECT space (not world/view
+  // space) — used by TexturedSurface's night-lights shader. Object space
+  // means it's correct regardless of camera timing, and it naturally
+  // accounts for this mesh's own spin (the terminator sweeps across the
+  // rotating surface, like a real day/night cycle) for free.
+  const sunDirection = useRef(new Vector3(0, 0, 1));
+  const inverseRotation = useRef(new Quaternion());
   // Ring around the placeholder marking it as the current selection — kept
   // in lockstep with the placeholder's own scale in the same frame, below.
   const selectionRing = useRef<Mesh>(null);
@@ -164,7 +237,20 @@ function Planet({
       semiMinorAxis * Math.sin(eccentricAnomaly),
     );
 
-    if (mesh.current) mesh.current.rotation.y += spinSpeed * delta;
+    if (mesh.current) {
+      mesh.current.rotation.y += spinSpeed * delta;
+
+      // Sun is always at the origin, so world-space direction to it is just
+      // -position. Rotating that into this mesh's object space right here
+      // (rather than in TexturedSurface's own frame) means it's always
+      // computed from this exact rotation.y update, never a stale one.
+      inverseRotation.current.copy(mesh.current.quaternion).invert();
+      sunDirection.current
+        .set(0, 0, 0)
+        .sub(group.current.position)
+        .normalize()
+        .applyQuaternion(inverseRotation.current);
+    }
   }, FRAME_PRIORITY.updatePosition);
 
   // Runs after CameraRig: by now the camera has already caught up to this
@@ -213,7 +299,7 @@ function Planet({
           <sphereGeometry args={[radius, 100, 100]} />
           {textures ? (
             <Suspense fallback={<meshStandardMaterial color={color} roughness={0.7} metalness={0.1} />}>
-              <TexturedSurface textures={textures} />
+              <TexturedSurface textures={textures} sunDirection={sunDirection} />
             </Suspense>
           ) : (
             <meshStandardMaterial color={color} roughness={0.7} metalness={0.1} />
