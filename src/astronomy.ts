@@ -64,6 +64,7 @@ export type PlanetTextures = {
   map: string;
   normalMap?: string;
   specularMap?: string;
+  nightMap?: string;
 };
 
 export type PlanetData = {
@@ -92,6 +93,7 @@ export const PLANETS: PlanetData[] = [
       map: "/textures/earth/map.jpg",
       normalMap: "/textures/earth/normal.png",
       specularMap: "/textures/earth/specular.png",
+      nightMap: "/textures/earth/nightmap.jpg",
     },
   },
   { id: "mars", color: "#c1440e", radiusKm: 3389.5, semiMajorAxisKm: 227_939_200, eccentricity: 0.0934 },
