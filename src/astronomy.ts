@@ -67,6 +67,13 @@ export type PlanetTextures = {
   nightMap?: string;
 };
 
+export type PlanetRingData = {
+  texture: string;
+  innerRadiusRatio: number; // relative to planet radius
+  outerRadiusRatio: number; // relative to planet radius
+  opacity?: number;
+};
+
 export type PlanetData = {
   id: string;
   color: string;
@@ -76,6 +83,7 @@ export type PlanetData = {
   rotationPeriodDays: number;
   axialTiltDegrees?: number;
   textures?: PlanetTextures;
+  ring?: PlanetRingData;
 };
 
 export const SUN_DATA = {
@@ -160,6 +168,12 @@ export const PLANETS: PlanetData[] = [
     axialTiltDegrees: 26.73,
     textures: {
       map: "/textures/saturn/map.jpg",
+    },
+    ring: {
+      texture: "/textures/saturn/ring.png",
+      innerRadiusRatio: 1.4,
+      outerRadiusRatio: 2.6,
+      opacity: 0.9,
     },
   },
   {
