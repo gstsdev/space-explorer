@@ -108,6 +108,7 @@ export const PLANETS: PlanetData[] = [
     eccentricity: 0.0068,
     rotationPeriodDays: 243.025,
     axialTiltDegrees: 177.36,
+    rotationDirection: -1,
     textures: {
       map: "/textures/venus/map.jpg",
     },
@@ -171,6 +172,7 @@ export const PLANETS: PlanetData[] = [
     eccentricity: 0.0457,
     rotationPeriodDays: 0.71833,
     axialTiltDegrees: 97.77,
+    rotationDirection: -1,
     textures: {
       map: "/textures/uranus/map.jpg",
     },
