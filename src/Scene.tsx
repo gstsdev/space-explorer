@@ -159,6 +159,7 @@ type PlanetProps = {
   semiMajorAxis: number; // true-scale orbit size, in scene units
   eccentricity: number; // 0 = circle, closer to 1 = more stretched-out ellipse
   rotationPeriodDays?: number;
+  axialTiltDegrees?: number;
   rotationDirection?: 1 | -1;
   selected: boolean;
   textures?: PlanetTextures;
@@ -172,6 +173,7 @@ function Planet({
   semiMajorAxis,
   eccentricity,
   rotationPeriodDays = 1,
+  axialTiltDegrees = 0,
   rotationDirection = 1,
   selected,
   textures,
@@ -198,11 +200,12 @@ function Planet({
 
   const period = 2 * Math.PI * Math.sqrt(semiMajorAxis ** 3 / GM_SUN_SCALED);
   const semiMinorAxis = semiMajorAxis * Math.sqrt(1 - eccentricity ** 2);
+  const axialTiltRadians = (axialTiltDegrees * Math.PI) / 180;
   const rotationRadiansPerSecond =
     (2 * Math.PI * rotationDirection) / (rotationPeriodDays * 24 * 60 * 60);
-  // Distance at which the body's angular size crosses the "readable" threshold.
+  // Distance at which the body's axial tilt crosses the "readable" threshold.
   const switchDistance = radius / ANGULAR_THRESHOLD;
-
+ 
   // Trace the same ellipse the planet moves along, so the orbit path is
   // visible even though it's a static line (not an actual fading trail).
   const orbitPoints = useMemo(() => {
@@ -216,6 +219,15 @@ function Planet({
       ] as [number, number, number];
     });
   }, [semiMajorAxis, eccentricity, semiMinorAxis]);
+
+  // Apply axial tilt once on mount/update without making the mesh a
+  // controlled prop; mutating rotation in useFrame must not be clobbered by
+  // React re-applying a JSX rotation prop each render.
+  useEffect(() => {
+    if (mesh.current) {
+      mesh.current.rotation.x = axialTiltRadians;
+    }
+  }, [axialTiltRadians]);
 
   // Runs before CameraRig: advances this planet along its orbit for the
   // current frame using this frame's already-advanced simulation time (see
@@ -251,7 +263,7 @@ function Planet({
       // -position. Rotating that into this mesh's object space right here
       // (rather than in TexturedSurface's own frame) means it's always
       // computed from this exact rotation.y update, never a stale one.
-      inverseRotation.current.copy(mesh.current.quaternion).invert();
+      mesh.current.getWorldQuaternion(inverseRotation.current).invert();
       sunDirection.current
         .set(0, 0, 0)
         .sub(group.current.position)
@@ -474,6 +486,7 @@ export function Scene({ selectedId, onFocus }: { selectedId: string | null; onFo
           semiMajorAxis={planet.semiMajorAxisKm * KM_TO_UNITS}
           eccentricity={planet.eccentricity}
           rotationPeriodDays={planet.rotationPeriodDays}
+          axialTiltDegrees={planet.axialTiltDegrees}
           rotationDirection={planet.rotationDirection}
           selected={selectedId === planet.id}
           textures={planet.textures}
