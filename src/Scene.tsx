@@ -160,7 +160,6 @@ type PlanetProps = {
   eccentricity: number; // 0 = circle, closer to 1 = more stretched-out ellipse
   rotationPeriodDays?: number;
   axialTiltDegrees?: number;
-  rotationDirection?: 1 | -1;
   selected: boolean;
   textures?: PlanetTextures;
   onFocus: OnFocus;
@@ -174,7 +173,6 @@ function Planet({
   eccentricity,
   rotationPeriodDays = 1,
   axialTiltDegrees = 0,
-  rotationDirection = 1,
   selected,
   textures,
   onFocus,
@@ -202,7 +200,7 @@ function Planet({
   const semiMinorAxis = semiMajorAxis * Math.sqrt(1 - eccentricity ** 2);
   const axialTiltRadians = (axialTiltDegrees * Math.PI) / 180;
   const rotationRadiansPerSecond =
-    (2 * Math.PI * rotationDirection) / (rotationPeriodDays * 24 * 60 * 60);
+    (2 * Math.PI) / (rotationPeriodDays * 24 * 60 * 60);
   // Distance at which the body's axial tilt crosses the "readable" threshold.
   const switchDistance = radius / ANGULAR_THRESHOLD;
  
@@ -487,7 +485,6 @@ export function Scene({ selectedId, onFocus }: { selectedId: string | null; onFo
           eccentricity={planet.eccentricity}
           rotationPeriodDays={planet.rotationPeriodDays}
           axialTiltDegrees={planet.axialTiltDegrees}
-          rotationDirection={planet.rotationDirection}
           selected={selectedId === planet.id}
           textures={planet.textures}
           onFocus={onFocus}

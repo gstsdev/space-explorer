@@ -10,14 +10,18 @@ function formatPeriod(days: number) {
   return `${(days / 365.25).toFixed(1)} years`;
 }
 
-function formatRotationDirection(direction?: 1 | -1) {
-  if (direction === -1) return "Retrograde";
-  return "Prograde";
-}
-
 function formatAxialTilt(degrees?: number) {
   if (degrees === undefined) return "—";
   return `${degrees.toFixed(2)}°`;
+}
+
+function formatRotationDirectionFromTilt(degrees?: number) {
+  if (degrees === undefined) return "—";
+  // If the tilt is greater than 90° (or less than -90°) the north pole is
+  // flipped and the apparent rotation from an external viewpoint is
+  // retrograde.
+  const absDeg = Math.abs(degrees);
+  return absDeg > 90 ? "Retrograde" : "Prograde";
 }
 
 const rowStyle: CSSProperties = {
@@ -78,7 +82,7 @@ export function StatsPanel({ selectedId }: { selectedId: string | null }) {
             value={formatPeriod(orbitalPeriodDays(planet.semiMajorAxisKm))}
           />
           <Stat label="Rotation period" value={formatPeriod(planet.rotationPeriodDays)} />
-          <Stat label="Rotation direction" value={formatRotationDirection(planet.rotationDirection)} />
+          <Stat label="Rotation direction" value={formatRotationDirectionFromTilt(planet.axialTiltDegrees)} />
           <Stat label="Axial tilt" value={formatAxialTilt(planet.axialTiltDegrees)} />
         </>
       )}
