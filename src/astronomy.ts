@@ -57,12 +57,22 @@ export const MAX_SPEED_EXPONENT = Math.log10(10 * SECONDS_PER_YEAR);
 // app should open already running at.
 export const DEFAULT_SPEED_EXPONENT = 6;
 
+// A planet's full texture set — deliberately all-or-nothing (rather than
+// each map individually optional) since specular/normal maps are meaningless
+// without the base color map, and it keeps the loading code in Scene.tsx simple.
+export type PlanetTextures = {
+  map: string;
+  normalMap?: string;
+  specularMap?: string;
+};
+
 export type PlanetData = {
   id: string;
   color: string;
   radiusKm: number;
   semiMajorAxisKm: number;
   eccentricity: number;
+  textures?: PlanetTextures;
 };
 
 export const SUN_DATA = { id: "sun", color: "#ffcc66", radiusKm: SUN_RADIUS_KM };

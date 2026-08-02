@@ -1,6 +1,6 @@
-import { useMemo, useRef } from "react";
+import { Suspense, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
-import { Billboard, Html, Line } from "@react-three/drei";
+import { Billboard, Html, Line, useTexture } from "@react-three/drei";
 import { AdditiveBlending, MathUtils, ShaderMaterial } from "three";
 import type { Group, Mesh, Object3D } from "three";
 import type { ThreeEvent } from "@react-three/fiber";
@@ -15,6 +15,7 @@ import {
   SUN_RADIUS,
   VIEW_MULTIPLIER,
 } from "./astronomy";
+import type { PlanetTextures } from "./astronomy";
 import { simulation } from "./simulation";
 import { FRAME_PRIORITY } from "./framePriority";
 
@@ -67,6 +68,24 @@ function BodyLabel({ id, selected }: { id: string; selected: boolean }) {
 
 type OnFocus = (target: Object3D, id: string) => void;
 
+// Textured surface material — split out so its useTexture() suspends only
+// this material, not the whole planet, while the maps load. MeshPhongMaterial
+// (not MeshStandardMaterial, used everywhere else) specifically because its
+// specular/shininess model is what specularMap textures — including the
+// classic "grayscale ocean mask" Earth specular maps — are authored for.
+function TexturedSurface({ textures }: { textures: PlanetTextures }) {
+  const maps = useTexture(textures);
+  return (
+    <meshPhongMaterial
+      map={maps.map}
+      normalMap={maps.normalMap}
+      specularMap={maps.specularMap}
+      specular="#333333"
+      shininess={15}
+    />
+  );
+}
+
 type PlanetProps = {
   id: string;
   color: string;
@@ -75,10 +94,21 @@ type PlanetProps = {
   eccentricity: number; // 0 = circle, closer to 1 = more stretched-out ellipse
   spinSpeed?: number;
   selected: boolean;
+  textures?: PlanetTextures;
   onFocus: OnFocus;
 };
 
-function Planet({ id, color, radius, semiMajorAxis, eccentricity, spinSpeed = 0.5, selected, onFocus }: PlanetProps) {
+function Planet({
+  id,
+  color,
+  radius,
+  semiMajorAxis,
+  eccentricity,
+  spinSpeed = 0.5,
+  selected,
+  textures,
+  onFocus,
+}: PlanetProps) {
   const group = useRef<Group>(null);
   const mesh = useRef<Mesh>(null);
   // A body's true size only reads as a sphere once you're close; from any
@@ -181,7 +211,13 @@ function Planet({ id, color, radius, semiMajorAxis, eccentricity, spinSpeed = 0.
       >
         <mesh ref={mesh} onClick={handleFocus} {...hoverCursor}>
           <sphereGeometry args={[radius, 100, 100]} />
-          <meshStandardMaterial color={color} roughness={0.7} metalness={0.1} />
+          {textures ? (
+            <Suspense fallback={<meshStandardMaterial color={color} roughness={0.7} metalness={0.1} />}>
+              <TexturedSurface textures={textures} />
+            </Suspense>
+          ) : (
+            <meshStandardMaterial color={color} roughness={0.7} metalness={0.1} />
+          )}
         </mesh>
         <Billboard>
           <mesh ref={placeholder} onClick={handleFocus} {...hoverCursor}>
@@ -346,6 +382,7 @@ export function Scene({ selectedId, onFocus }: { selectedId: string | null; onFo
           semiMajorAxis={planet.semiMajorAxisKm * KM_TO_UNITS}
           eccentricity={planet.eccentricity}
           selected={selectedId === planet.id}
+          textures={planet.textures}
           onFocus={onFocus}
         />
       ))}
