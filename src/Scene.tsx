@@ -2,7 +2,7 @@ import { Suspense, useEffect, useMemo, useRef } from "react";
 import type { RefObject } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Billboard, Html, Line, useTexture } from "@react-three/drei";
-import { AdditiveBlending, DoubleSide, MathUtils, Quaternion, ShaderMaterial, SRGBColorSpace, Vector3 } from "three";
+import { AdditiveBlending, BufferAttribute, DoubleSide, MathUtils, Quaternion, RingGeometry, ShaderMaterial, SRGBColorSpace, Vector3, RepeatWrapping, ClampToEdgeWrapping } from "three";
 import type { Group, Mesh, Object3D } from "three";
 import type { ThreeEvent } from "@react-three/fiber";
 import {
@@ -162,9 +162,46 @@ function PlanetRing({
   radius: number;
 }) {
   const texture = useTexture(ring.texture);
+  const textureRef = useRef(texture);
+ 
+  const ringGeometry = useMemo(() => {
+    const innerRadius = radius * ring.innerRadiusRatio;
+    const outerRadius = radius * ring.outerRadiusRatio;
+    const geometry = new RingGeometry(innerRadius, outerRadius, 256, 1);
+    const position = geometry.getAttribute("position");
+    const uv = new Float32Array(position.count * 2);
+    const radiusRange = outerRadius - innerRadius;
+
+    for (let i = 0; i < position.count; i += 1) {
+      const x = position.getX(i);
+      const y = position.getY(i);
+      const theta = Math.atan2(y, x);
+      const r = Math.sqrt(x * x + y * y);
+      // The ring texture is a vertical slice where width maps to radius and
+      // height maps to circumference, so swap the UV axes from the standard
+      // ring parameterization.
+      uv[i * 2] = (r - innerRadius) / radiusRange;
+      uv[i * 2 + 1] = (theta + Math.PI) / (2 * Math.PI);
+    }
+
+    geometry.setAttribute("uv", new BufferAttribute(uv, 2));
+    return geometry;
+  }, [radius, ring.innerRadiusRatio, ring.outerRadiusRatio]);
+
+  useEffect(() => {
+    if (texture) {
+      textureRef.current = texture;
+      textureRef.current.rotation = 0;
+      textureRef.current.center.set(0.5, 0.5);
+      textureRef.current.wrapS = ClampToEdgeWrapping;
+      textureRef.current.wrapT = RepeatWrapping;
+      textureRef.current.repeat.set(1, 1);
+      textureRef.current.needsUpdate = true;
+    }
+  }, [texture]);
+
   return (
-    <mesh rotation={[Math.PI / 2 + axialTiltRadians, 0, 0]}>
-      <ringGeometry args={[radius * ring.innerRadiusRatio, radius * ring.outerRadiusRatio, 256]} />
+    <mesh geometry={ringGeometry} rotation={[Math.PI / 2 + axialTiltRadians, 0, 0]}>
       <meshBasicMaterial
         map={texture}
         transparent
