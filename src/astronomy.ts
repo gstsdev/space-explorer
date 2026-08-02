@@ -94,6 +94,9 @@ export const PLANETS: PlanetData[] = [
     semiMajorAxisKm: 57_909_050,
     eccentricity: 0.2056,
     rotationPeriodDays: 58.646,
+    textures: {
+      map: "/textures/mercury/map.jpg",
+    },
   },
   {
     id: "venus",
@@ -103,6 +106,9 @@ export const PLANETS: PlanetData[] = [
     eccentricity: 0.0068,
     rotationPeriodDays: 243.025,
     rotationDirection: -1, // Venus rotates retrograde relative to most planets
+    textures: {
+      map: "/textures/venus/map.jpg",
+    },
   },
   {
     id: "earth",
@@ -126,6 +132,9 @@ export const PLANETS: PlanetData[] = [
     semiMajorAxisKm: 227_939_200,
     eccentricity: 0.0934,
     rotationPeriodDays: 1.025957,
+    textures: {
+      map: "/textures/mars/map.jpg",
+    },
   },
   {
     id: "jupiter",
@@ -134,6 +143,9 @@ export const PLANETS: PlanetData[] = [
     semiMajorAxisKm: 778_479_000,
     eccentricity: 0.0489,
     rotationPeriodDays: 0.41354,
+    textures: {
+      map: "/textures/jupiter/map.jpg",
+    },
   },
   {
     id: "saturn",
@@ -142,6 +154,9 @@ export const PLANETS: PlanetData[] = [
     semiMajorAxisKm: 1_432_041_000,
     eccentricity: 0.0565,
     rotationPeriodDays: 0.44401,
+    textures: {
+      map: "/textures/saturn/map.jpg",
+    },
   },
   {
     id: "uranus",
@@ -151,6 +166,9 @@ export const PLANETS: PlanetData[] = [
     eccentricity: 0.0457,
     rotationPeriodDays: 0.71833,
     rotationDirection: -1, // Uranus rotates retrograde due to its extreme axial tilt
+    textures: {
+      map: "/textures/uranus/map.jpg",
+    },
   },
   {
     id: "neptune",
@@ -159,5 +177,8 @@ export const PLANETS: PlanetData[] = [
     semiMajorAxisKm: 4_514_953_000,
     eccentricity: 0.0113,
     rotationPeriodDays: 0.67125,
+    textures: {
+      map: "/textures/neptune/map.jpg",
+    },
   },
 ];
