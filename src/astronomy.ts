@@ -82,7 +82,18 @@ export const KM_PER_AU = 149_597_870.7;
 export const PLANETS: PlanetData[] = [
   { id: "mercury", color: "#8c8c8c", radiusKm: 2439.7, semiMajorAxisKm: 57_909_050, eccentricity: 0.2056 },
   { id: "venus", color: "#e0a96d", radiusKm: 6051.8, semiMajorAxisKm: 108_208_000, eccentricity: 0.0068 },
-  { id: "earth", color: "#4d90fe", radiusKm: 6371, semiMajorAxisKm: 149_598_023, eccentricity: 0.0167 },
+  {
+    id: "earth",
+    color: "#4d90fe",
+    radiusKm: 6371,
+    semiMajorAxisKm: 149_598_023,
+    eccentricity: 0.0167,
+    textures: {
+      map: "/textures/earth/map.jpg",
+      normalMap: "/textures/earth/normal.png",
+      specularMap: "/textures/earth/specular.png",
+    },
+  },
   { id: "mars", color: "#c1440e", radiusKm: 3389.5, semiMajorAxisKm: 227_939_200, eccentricity: 0.0934 },
   { id: "jupiter", color: "#d9b384", radiusKm: 69_911, semiMajorAxisKm: 778_479_000, eccentricity: 0.0489 },
   { id: "saturn", color: "#e3c78a", radiusKm: 58_232, semiMajorAxisKm: 1_432_041_000, eccentricity: 0.0565 },
