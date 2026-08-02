@@ -2,7 +2,7 @@ import { Suspense, useEffect, useMemo, useRef } from "react";
 import type { RefObject } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Billboard, Html, Line, useTexture } from "@react-three/drei";
-import { AdditiveBlending, BufferAttribute, DoubleSide, MathUtils, Quaternion, RingGeometry, ShaderMaterial, SRGBColorSpace, Vector3, RepeatWrapping, ClampToEdgeWrapping } from "three";
+import { AdditiveBlending, BufferAttribute, DoubleSide, Euler, MathUtils, Quaternion, RingGeometry, ShaderMaterial, SRGBColorSpace, Vector3, RepeatWrapping, ClampToEdgeWrapping } from "three";
 import type { Group, Mesh, Object3D } from "three";
 import type { ThreeEvent } from "@react-three/fiber";
 import {
@@ -156,13 +156,18 @@ function PlanetRing({
   ring,
   axialTiltRadians,
   radius,
+  sunDirection,
 }: {
   ring: PlanetRingData;
   axialTiltRadians: number;
   radius: number;
+  sunDirection: RefObject<Vector3>;
 }) {
   const texture = useTexture(ring.texture);
   const textureRef = useRef(texture);
+  const shaderUniforms = useRef<{ sunDirection: { value: Vector3 } } | null>(
+    null,
+  );
  
   const ringGeometry = useMemo(() => {
     const innerRadius = radius * ring.innerRadiusRatio;
@@ -200,20 +205,85 @@ function PlanetRing({
     }
   }, [texture]);
 
+  useFrame(() => {
+    if (shaderUniforms.current)
+      shaderUniforms.current.sunDirection.value.copy(sunDirection.current);
+  }, FRAME_PRIORITY.updateVisibility);
+
   return (
     <mesh geometry={ringGeometry} rotation={[Math.PI / 2 + axialTiltRadians, 0, 0]}>
-      <meshBasicMaterial
+      <meshPhongMaterial
         map={texture}
         transparent
         alphaTest={0.05}
         opacity={ring.opacity ?? 0.9}
         side={DoubleSide}
         depthWrite={false}
+        shininess={5}
+        specular="#222222"
+        onBeforeCompile={(shader) => {
+          shader.uniforms.sunDirection = { value: new Vector3(0, 0, 1) };
+          shader.uniforms.planetRadius = { value: radius };
+          shaderUniforms.current = shader.uniforms as unknown as { sunDirection: { value: Vector3 } };
+
+          // vRingLocalPosition carries each fragment's un-rotated local
+          // position (same space RingGeometry's vertices are authored in,
+          // and the same space sunDirection below is expressed in) through
+          // to the fragment shader, for the ray-sphere shadow test below.
+          shader.vertexShader = shader.vertexShader
+            .replace("#include <common>", "#include <common>\nvarying vec3 vRingLocalPosition;")
+            .replace("#include <begin_vertex>", "#include <begin_vertex>\nvRingLocalPosition = position;");
+
+          shader.fragmentShader = shader.fragmentShader
+            .replace(
+              "#include <common>",
+              "#include <common>\nvarying vec3 vRingLocalPosition;\nuniform vec3 sunDirection;\nuniform float planetRadius;",
+            )
+            // A real ring isn't an opaque sheet — it's countless ice/dust
+            // particles, so even lit edge-on (sun near the ring's own plane)
+            // it stays faintly visible via forward-scattering. An idealized
+            // Lambertian disc has no such thing: dot(normal, sunDir) → 0
+            // exactly at that crossing, so standard Phong shading goes fully
+            // black there, which reads as a rendering bug rather than the
+            // physically-expected (if exaggerated) ring-plane-crossing dimming.
+            // RingGeometry's un-rotated per-vertex normal is always (0,0,1),
+            // and sunDirection is already in this mesh's own object space
+            // (computed in Planet from the same fixed rotation this mesh
+            // carries), so no vertex-shader work is needed here — just
+            // compare against a constant.
+            .replace(
+              "#include <emissivemap_fragment>",
+              `#include <emissivemap_fragment>
+              float ringNdotL = dot(vec3(0.0, 0.0, 1.0), normalize(sunDirection));
+              float grazing = 1.0 - abs(ringNdotL);
+              totalEmissiveRadiance += diffuseColor.rgb * grazing * 0.35;`,
+            )
+            // Real (analytic) ray-sphere shadow test: is the sun blocked by
+            // the planet as seen from this point on the ring? Unlike a
+            // normal-based light, this is a pure position/geometry test —
+            // correct on both ring faces at once (the planet blocks light
+            // for the whole umbra region, not just "whichever face happens
+            // to point sunward"), and confined entirely to this material, so
+            // it can never spill extra brightness onto the sphere the way a
+            // real scene light would (Three.js has no per-object light
+            // exclusion, which is why we're not using one for this anymore).
+            .replace(
+              "vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + reflectedLight.directSpecular + reflectedLight.indirectSpecular + totalEmissiveRadiance;",
+              `vec3 toSun = normalize(sunDirection);
+              float b = dot(vRingLocalPosition, toSun);
+              float c = dot(vRingLocalPosition, vRingLocalPosition) - planetRadius * planetRadius;
+              float h = b * b - c;
+              float inShadow = (h > 0.0 && (-b - sqrt(h)) > 0.0) ? 1.0 : 0.0;
+              float ringShadowFactor = mix(1.0, 0.25, inShadow);
+
+              vec3 outgoingLight = (reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + reflectedLight.directSpecular + reflectedLight.indirectSpecular + totalEmissiveRadiance) * ringShadowFactor;`,
+            );
+        }}
       />
     </mesh>
   );
 }
- 
+
 type PlanetProps = {
   id: string;
   color: string;
@@ -256,13 +326,22 @@ function Planet({
   // rotating surface, like a real day/night cycle) for free.
   const sunDirection = useRef(new Vector3(0, 0, 1));
   const inverseRotation = useRef(new Quaternion());
+  const ringSunDirection = useRef(new Vector3(0, 0, 1));
+  // Sun direction in group-local space (== world space, since group only
+  // ever translates) — the un-rotated base that sunDirection/ringSunDirection
+  // are each derived from below.
+  const localSunDirection = useRef(new Vector3(0, 0, 1));
+  const axialTiltRadians = (axialTiltDegrees * Math.PI) / 180;
+  const ringInverseRotation = useMemo(
+    () => new Quaternion().setFromEuler(new Euler(Math.PI / 2 + axialTiltRadians, 0, 0)).invert(),
+    [axialTiltRadians],
+  );
   // Ring around the placeholder marking it as the current selection — kept
   // in lockstep with the placeholder's own scale in the same frame, below.
   const selectionRing = useRef<Mesh>(null);
 
   const period = 2 * Math.PI * Math.sqrt(semiMajorAxis ** 3 / GM_SUN_SCALED);
   const semiMinorAxis = semiMajorAxis * Math.sqrt(1 - eccentricity ** 2);
-  const axialTiltRadians = (axialTiltDegrees * Math.PI) / 180;
   const rotationRadiansPerSecond =
     (2 * Math.PI) / (rotationPeriodDays * 24 * 60 * 60);
   // Distance at which the body's axial tilt crosses the "readable" threshold.
@@ -315,22 +394,23 @@ function Planet({
       semiMinorAxis * Math.sin(eccentricAnomaly),
     );
 
+    // Sun is always at the origin, so world-space (== group-local, since
+    // group only ever translates) direction to it is just -position.
+    localSunDirection.current.set(0, 0, 0).sub(group.current.position).normalize();
+
     if (mesh.current) {
       // Advance the surface spin using the shared simulation clock so changing
       // playback speed affects day/night cycle timing as expected.
       mesh.current.rotation.y +=
         rotationRadiansPerSecond * delta * simulation.speed;
 
-      // Sun is always at the origin, so world-space direction to it is just
-      // -position. Rotating that into this mesh's object space right here
-      // (rather than in TexturedSurface's own frame) means it's always
+      // Rotating the local sun direction into this mesh's object space right
+      // here (rather than in TexturedSurface's own frame) means it's always
       // computed from this exact rotation.y update, never a stale one.
       mesh.current.getWorldQuaternion(inverseRotation.current).invert();
-      sunDirection.current
-        .set(0, 0, 0)
-        .sub(group.current.position)
-        .normalize()
-        .applyQuaternion(inverseRotation.current);
+      sunDirection.current.copy(localSunDirection.current).applyQuaternion(inverseRotation.current);
+
+      ringSunDirection.current.copy(localSunDirection.current).applyQuaternion(ringInverseRotation);
     }
   }, FRAME_PRIORITY.updatePosition);
 
@@ -396,7 +476,14 @@ function Planet({
             <meshBasicMaterial color="#ffffff" depthTest={false} transparent opacity={0.9} />
           </mesh>
         </Billboard>
-        {ring ? <PlanetRing ring={ring} axialTiltRadians={axialTiltRadians} radius={radius} /> : null}
+        {ring ? (
+          <PlanetRing
+            ring={ring}
+            axialTiltRadians={axialTiltRadians}
+            radius={radius}
+            sunDirection={ringSunDirection}
+          />
+        ) : null}
         <BodyLabel id={id} selected={selected} />
       </group>
     </>
