@@ -2,7 +2,7 @@ import { Suspense, useEffect, useMemo, useRef } from "react";
 import type { RefObject } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Billboard, Html, Line, useTexture } from "@react-three/drei";
-import { AdditiveBlending, MathUtils, Quaternion, ShaderMaterial, SRGBColorSpace, Vector3 } from "three";
+import { AdditiveBlending, DoubleSide, MathUtils, Quaternion, ShaderMaterial, SRGBColorSpace, Vector3 } from "three";
 import type { Group, Mesh, Object3D } from "three";
 import type { ThreeEvent } from "@react-three/fiber";
 import {
@@ -16,7 +16,7 @@ import {
   SUN_RADIUS,
   VIEW_MULTIPLIER,
 } from "./astronomy";
-import type { PlanetTextures } from "./astronomy";
+import type { PlanetRingData, PlanetTextures } from "./astronomy";
 import { simulation } from "./simulation";
 import { FRAME_PRIORITY } from "./framePriority";
 
@@ -151,7 +151,32 @@ function TexturedSurface({
     />
   );
 }
-
+ 
+function PlanetRing({
+  ring,
+  axialTiltRadians,
+  radius,
+}: {
+  ring: PlanetRingData;
+  axialTiltRadians: number;
+  radius: number;
+}) {
+  const texture = useTexture(ring.texture);
+  return (
+    <mesh rotation={[Math.PI / 2 + axialTiltRadians, 0, 0]}>
+      <ringGeometry args={[radius * ring.innerRadiusRatio, radius * ring.outerRadiusRatio, 256]} />
+      <meshBasicMaterial
+        map={texture}
+        transparent
+        alphaTest={0.05}
+        opacity={ring.opacity ?? 0.9}
+        side={DoubleSide}
+        depthWrite={false}
+      />
+    </mesh>
+  );
+}
+ 
 type PlanetProps = {
   id: string;
   color: string;
@@ -162,6 +187,7 @@ type PlanetProps = {
   axialTiltDegrees?: number;
   selected: boolean;
   textures?: PlanetTextures;
+  ring?: PlanetRingData;
   onFocus: OnFocus;
 };
 
@@ -175,6 +201,7 @@ function Planet({
   axialTiltDegrees = 0,
   selected,
   textures,
+  ring,
   onFocus,
 }: PlanetProps) {
   const group = useRef<Group>(null);
@@ -332,6 +359,7 @@ function Planet({
             <meshBasicMaterial color="#ffffff" depthTest={false} transparent opacity={0.9} />
           </mesh>
         </Billboard>
+        {ring ? <PlanetRing ring={ring} axialTiltRadians={axialTiltRadians} radius={radius} /> : null}
         <BodyLabel id={id} selected={selected} />
       </group>
     </>
@@ -487,6 +515,7 @@ export function Scene({ selectedId, onFocus }: { selectedId: string | null; onFo
           axialTiltDegrees={planet.axialTiltDegrees}
           selected={selectedId === planet.id}
           textures={planet.textures}
+          ring={planet.ring}
           onFocus={onFocus}
         />
       ))}
