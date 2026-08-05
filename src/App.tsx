@@ -7,6 +7,7 @@ import { SimulationClock } from "./simulation";
 import { SpeedControl } from "./SpeedControl";
 import { StatsPanel } from "./StatsPanel";
 import { Skybox } from "./Skybox";
+import { ViewControls } from "./ViewControls";
 import { SUN_DATA } from "./astronomy";
 
 export default function App() {
@@ -16,6 +17,8 @@ export default function App() {
   // stays a plain ref since CameraRig reads it every frame and doesn't need
   // React to re-render the Canvas tree just because the camera is moving.
   const [selectedId, setSelectedId] = useState<string | null>(SUN_DATA.id);
+  const [showOrbits, setShowOrbits] = useState(true);
+  const [showPlaceholders, setShowPlaceholders] = useState(true);
 
   return (
     <>
@@ -34,6 +37,8 @@ export default function App() {
         </Suspense>
         <Scene
           selectedId={selectedId}
+          showOrbits={showOrbits}
+          showPlaceholders={showPlaceholders}
           onFocus={(object, id) => {
             focusTarget.current = object;
             setSelectedId(id);
@@ -44,6 +49,12 @@ export default function App() {
       </Canvas>
       <SpeedControl />
       <StatsPanel selectedId={selectedId} />
+      <ViewControls
+        showOrbits={showOrbits}
+        onToggleOrbits={() => setShowOrbits((value) => !value)}
+        showPlaceholders={showPlaceholders}
+        onTogglePlaceholders={() => setShowPlaceholders((value) => !value)}
+      />
     </>
   );
 }

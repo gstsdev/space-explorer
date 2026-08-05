@@ -322,6 +322,8 @@ type PlanetProps = {
   selected: boolean;
   textures?: PlanetTextures;
   ring?: PlanetRingData;
+  showOrbit: boolean;
+  showPlaceholder: boolean;
   onFocus: OnFocus;
 };
 
@@ -338,6 +340,8 @@ function Planet({
   selected,
   textures,
   ring,
+  showOrbit,
+  showPlaceholder,
   onFocus,
 }: PlanetProps) {
   const group = useRef<Group>(null);
@@ -461,11 +465,11 @@ function Planet({
     const showReal = distance < switchDistance;
     if (mesh.current) mesh.current.visible = showReal;
     if (placeholder.current) {
-      placeholder.current.visible = !showReal;
+      placeholder.current.visible = !showReal && showPlaceholder;
       placeholder.current.scale.setScalar(distance * PLACEHOLDER_SIZE);
     }
     if (selectionRing.current) {
-      selectionRing.current.visible = !showReal && selected;
+      selectionRing.current.visible = !showReal && showPlaceholder && selected;
       selectionRing.current.scale.setScalar(distance * PLACEHOLDER_SIZE);
     }
   }, FRAME_PRIORITY.updateVisibility);
@@ -477,13 +481,15 @@ function Planet({
 
   return (
     <>
-      <Line
-        points={orbitPoints}
-        color={color}
-        transparent
-        opacity={selected ? 0.9 : 0.3}
-        linewidth={selected ? 2 : 1}
-      />
+      {showOrbit && (
+        <Line
+          points={orbitPoints}
+          color={color}
+          transparent
+          opacity={selected ? 0.9 : 0.3}
+          linewidth={selected ? 2 : 1}
+        />
+      )}
       <group
         ref={(el) => {
           group.current = el;
@@ -587,7 +593,15 @@ function SunGlare() {
   );
 }
 
-function Sun({ selected, onFocus }: { selected: boolean; onFocus: OnFocus }) {
+function Sun({
+  selected,
+  showPlaceholder,
+  onFocus,
+}: {
+  selected: boolean;
+  showPlaceholder: boolean;
+  onFocus: OnFocus;
+}) {
   const group = useRef<Group>(null);
   const mesh = useRef<Mesh>(null);
   const placeholder = useRef<Mesh>(null);
@@ -608,11 +622,11 @@ function Sun({ selected, onFocus }: { selected: boolean; onFocus: OnFocus }) {
     const showReal = distance < switchDistance;
     if (mesh.current) mesh.current.visible = showReal;
     if (placeholder.current) {
-      placeholder.current.visible = !showReal;
+      placeholder.current.visible = !showReal && showPlaceholder;
       placeholder.current.scale.setScalar(distance * PLACEHOLDER_SIZE);
     }
     if (selectionRing.current) {
-      selectionRing.current.visible = !showReal && selected;
+      selectionRing.current.visible = !showReal && showPlaceholder && selected;
       selectionRing.current.scale.setScalar(distance * PLACEHOLDER_SIZE);
     }
   }, FRAME_PRIORITY.updateVisibility);
@@ -660,10 +674,20 @@ function Sun({ selected, onFocus }: { selected: boolean; onFocus: OnFocus }) {
   );
 }
 
-export function Scene({ selectedId, onFocus }: { selectedId: string | null; onFocus: OnFocus }) {
+export function Scene({
+  selectedId,
+  showOrbits,
+  showPlaceholders,
+  onFocus,
+}: {
+  selectedId: string | null;
+  showOrbits: boolean;
+  showPlaceholders: boolean;
+  onFocus: OnFocus;
+}) {
   return (
     <>
-      <Sun selected={selectedId === SUN_DATA.id} onFocus={onFocus} />
+      <Sun selected={selectedId === SUN_DATA.id} showPlaceholder={showPlaceholders} onFocus={onFocus} />
       {PLANETS.map((planet) => (
         <Planet
           key={planet.id}
@@ -679,6 +703,8 @@ export function Scene({ selectedId, onFocus }: { selectedId: string | null; onFo
           selected={selectedId === planet.id}
           textures={planet.textures}
           ring={planet.ring}
+          showOrbit={showOrbits}
+          showPlaceholder={showPlaceholders}
           onFocus={onFocus}
         />
       ))}
