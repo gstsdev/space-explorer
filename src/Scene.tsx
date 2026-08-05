@@ -319,6 +319,7 @@ type PlanetProps = {
   axialTiltDegrees?: number;
   inclinationDegrees?: number;
   ascendingNodeDegrees?: number;
+  meanAnomalyAtEpochDegrees?: number;
   selected: boolean;
   textures?: PlanetTextures;
   ring?: PlanetRingData;
@@ -337,6 +338,7 @@ function Planet({
   axialTiltDegrees = 0,
   inclinationDegrees = 0,
   ascendingNodeDegrees = 0,
+  meanAnomalyAtEpochDegrees = 0,
   selected,
   textures,
   ring,
@@ -367,6 +369,7 @@ function Planet({
   const axialTiltRadians = (axialTiltDegrees * Math.PI) / 180;
   const inclinationRadians = (inclinationDegrees * Math.PI) / 180;
   const ascendingNodeRadians = (ascendingNodeDegrees * Math.PI) / 180;
+  const meanAnomalyAtEpochRadians = (meanAnomalyAtEpochDegrees * Math.PI) / 180;
   const ringInverseRotation = useMemo(
     () => new Quaternion().setFromEuler(new Euler(Math.PI / 2 + axialTiltRadians, 0, 0)).invert(),
     [axialTiltRadians],
@@ -413,10 +416,16 @@ function Planet({
     if (!group.current) return;
 
     // Mean anomaly: where the planet would be if it moved at constant speed
-    // around the orbit. Just elapsed-time-as-a-fraction-of-one-lap, in radians.
-    // Uses the shared simulation clock (real seconds × playback speed), not
-    // the render clock, so the speed slider affects every body in lockstep.
-    const meanAnomaly = ((simulation.time / period) * 2 * Math.PI) % (2 * Math.PI);
+    // around the orbit. meanAnomalyAtEpochRadians anchors it to the planet's
+    // real position at J2000.0; simulation.time (seconds since that same
+    // epoch) advances it from there, so simulation.time = secondsSinceJ2000()
+    // (the clock's real-time seed) reproduces the planet's actual current
+    // position, not an arbitrary start pose. Uses the shared simulation clock
+    // (real seconds × playback speed), not the render clock, so the speed
+    // slider affects every body in lockstep.
+    const twoPi = 2 * Math.PI;
+    const rawMeanAnomaly = meanAnomalyAtEpochRadians + (simulation.time / period) * twoPi;
+    const meanAnomaly = ((rawMeanAnomaly % twoPi) + twoPi) % twoPi;
     const eccentricAnomaly = solveEccentricAnomaly(meanAnomaly, eccentricity);
 
     // Converting eccentric anomaly to a point on the ellipse. The sun sits at
@@ -711,6 +720,7 @@ export function Scene({
           axialTiltDegrees={planet.axialTiltDegrees}
           inclinationDegrees={planet.inclinationDegrees}
           ascendingNodeDegrees={planet.ascendingNodeDegrees}
+          meanAnomalyAtEpochDegrees={planet.meanAnomalyAtEpochDegrees}
           selected={selectedId === planet.id}
           textures={planet.textures}
           ring={planet.ring}

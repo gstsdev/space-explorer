@@ -42,6 +42,19 @@ export const PLACEHOLDER_SIZE = 0.01;
 
 export const SECONDS_PER_YEAR = 31_557_600; // Julian year
 
+// J2000.0, the standard epoch real orbital elements (including the mean
+// anomalies below) are referenced to: 2000-01-01 12:00 TT, approximated here
+// as UTC since the ~64s TT-UTC offset is negligible next to orbital periods
+// measured in days/years.
+export const J2000_EPOCH_MS = Date.UTC(2000, 0, 1, 12, 0, 0);
+
+// Seconds elapsed between J2000.0 and the given moment (real wall-clock time
+// by default). The simulation clock is seeded with this so "now" maps to
+// each planet's actual real-world position, not an arbitrary start pose.
+export function secondsSinceJ2000(date: Date = new Date()): number {
+  return (date.getTime() - J2000_EPOCH_MS) / 1000;
+}
+
 // Playback speed slider: real orbital periods run from ~88 days (Mercury) to
 // ~687 days (Mars), so 1x (true real time) is imperceptibly slow to watch.
 // The slider is log-scaled — exponent 0..MAX_SPEED_EXPONENT maps to
@@ -89,6 +102,11 @@ export type PlanetData = {
   // completely different points in their orbit depending on this.
   inclinationDegrees?: number;
   ascendingNodeDegrees?: number;
+  // Real mean anomaly (M = mean longitude − longitude of perihelion) at the
+  // J2000.0 epoch, in degrees. Combined with secondsSinceJ2000(), this is
+  // what lets the simulation clock start at the planet's actual real-world
+  // orbital phase instead of everyone lining up at perihelion.
+  meanAnomalyAtEpochDegrees?: number;
   textures?: PlanetTextures;
   ring?: PlanetRingData;
 };
@@ -112,6 +130,7 @@ export const PLANETS: PlanetData[] = [
     axialTiltDegrees: 0.034,
     inclinationDegrees: 7.005,
     ascendingNodeDegrees: 48.331,
+    meanAnomalyAtEpochDegrees: 174.796,
     textures: {
       map: "/textures/mercury/map.jpg",
     },
@@ -126,6 +145,7 @@ export const PLANETS: PlanetData[] = [
     axialTiltDegrees: 177.36,
     inclinationDegrees: 3.39458,
     ascendingNodeDegrees: 76.68,
+    meanAnomalyAtEpochDegrees: 50.377,
     textures: {
       map: "/textures/venus/map.jpg",
     },
@@ -138,6 +158,7 @@ export const PLANETS: PlanetData[] = [
     eccentricity: 0.0167,
     rotationPeriodDays: 0.99726968,
     axialTiltDegrees: 23.44,
+    meanAnomalyAtEpochDegrees: 357.527,
     textures: {
       map: "/textures/earth/map.jpg",
       normalMap: "/textures/earth/normal.png",
@@ -155,6 +176,7 @@ export const PLANETS: PlanetData[] = [
     axialTiltDegrees: 25.19,
     inclinationDegrees: 1.85,
     ascendingNodeDegrees: 49.558,
+    meanAnomalyAtEpochDegrees: 19.39,
     textures: {
       map: "/textures/mars/map.jpg",
     },
@@ -169,6 +191,7 @@ export const PLANETS: PlanetData[] = [
     axialTiltDegrees: 3.13,
     inclinationDegrees: 1.303,
     ascendingNodeDegrees: 100.464,
+    meanAnomalyAtEpochDegrees: 19.668,
     textures: {
       map: "/textures/jupiter/map.jpg",
     },
@@ -183,6 +206,7 @@ export const PLANETS: PlanetData[] = [
     axialTiltDegrees: 26.73,
     inclinationDegrees: 2.485,
     ascendingNodeDegrees: 113.665,
+    meanAnomalyAtEpochDegrees: 317.355,
     textures: {
       map: "/textures/saturn/map.jpg",
     },
@@ -203,6 +227,7 @@ export const PLANETS: PlanetData[] = [
     axialTiltDegrees: 97.77,
     inclinationDegrees: 0.773,
     ascendingNodeDegrees: 74.006,
+    meanAnomalyAtEpochDegrees: 142.284,
     textures: {
       map: "/textures/uranus/map.jpg",
     },
@@ -217,6 +242,7 @@ export const PLANETS: PlanetData[] = [
     axialTiltDegrees: 28.32,
     inclinationDegrees: 1.77,
     ascendingNodeDegrees: 131.784,
+    meanAnomalyAtEpochDegrees: 259.915,
     textures: {
       map: "/textures/neptune/map.jpg",
     },

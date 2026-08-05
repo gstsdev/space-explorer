@@ -1,9 +1,9 @@
 import { useFrame } from "@react-three/fiber";
-import { DEFAULT_SPEED_EXPONENT } from "./astronomy";
+import { DEFAULT_SPEED_EXPONENT, secondsSinceJ2000 } from "./astronomy";
 import { FRAME_PRIORITY } from "./framePriority";
 
 export type SimulationState = {
-  time: number; // accumulated simulated seconds, advanced by speed each frame
+  time: number; // seconds since the J2000.0 epoch, advanced by speed each frame
   speed: number; // playback multiplier; 1 = real time
 };
 
@@ -11,8 +11,13 @@ export type SimulationState = {
 // by every orbiting body and written by the speed slider, and routing that
 // through React state or context would mean re-rendering the scene every
 // frame just to move a number forward.
+//
+// Seeded to the real elapsed time since J2000.0 (rather than 0) so the app
+// opens with every planet at its actual current position — each body's
+// per-frame mean anomaly combines this with its real mean anomaly at that
+// same epoch (see PlanetData.meanAnomalyAtEpochDegrees).
 export const simulation: SimulationState = {
-  time: 0,
+  time: secondsSinceJ2000(),
   speed: 10 ** DEFAULT_SPEED_EXPONENT,
 };
 
