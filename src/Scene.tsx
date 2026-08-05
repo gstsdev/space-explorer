@@ -39,6 +39,25 @@ const hoverCursor = {
   onPointerOut: () => (document.body.style.cursor = "auto"),
 };
 
+// Rotates a point in the flat 2D orbital plane (xOrb, yOrb — yOrb being the
+// in-plane axis perpendicular to xOrb, i.e. what used to go straight into
+// world Z) into tilted 3D world space: inclination is how far the plane
+// tilts, ascendingNode is which direction (around the vertical axis) it
+// tilts toward. At inclination 0 this reduces to (xOrb, 0, yOrb) — the flat,
+// single-plane orbit every planet used before inclination existed.
+function tiltOrbitalPosition(
+  xOrb: number,
+  yOrb: number,
+  inclination: number,
+  ascendingNode: number,
+): [number, number, number] {
+  const cosO = Math.cos(ascendingNode);
+  const sinO = Math.sin(ascendingNode);
+  const cosI = Math.cos(inclination);
+  const sinI = Math.sin(inclination);
+  return [xOrb * cosO - yOrb * sinO * cosI, yOrb * sinI, xOrb * sinO + yOrb * cosO * cosI];
+}
+
 function capitalize(id: string) {
   return id[0].toUpperCase() + id.slice(1);
 }
@@ -298,6 +317,8 @@ type PlanetProps = {
   eccentricity: number; // 0 = circle, closer to 1 = more stretched-out ellipse
   rotationPeriodDays?: number;
   axialTiltDegrees?: number;
+  inclinationDegrees?: number;
+  ascendingNodeDegrees?: number;
   selected: boolean;
   textures?: PlanetTextures;
   ring?: PlanetRingData;
@@ -312,6 +333,8 @@ function Planet({
   eccentricity,
   rotationPeriodDays = 1,
   axialTiltDegrees = 0,
+  inclinationDegrees = 0,
+  ascendingNodeDegrees = 0,
   selected,
   textures,
   ring,
@@ -338,6 +361,8 @@ function Planet({
   // are each derived from below.
   const localSunDirection = useRef(new Vector3(0, 0, 1));
   const axialTiltRadians = (axialTiltDegrees * Math.PI) / 180;
+  const inclinationRadians = (inclinationDegrees * Math.PI) / 180;
+  const ascendingNodeRadians = (ascendingNodeDegrees * Math.PI) / 180;
   const ringInverseRotation = useMemo(
     () => new Quaternion().setFromEuler(new Euler(Math.PI / 2 + axialTiltRadians, 0, 0)).invert(),
     [axialTiltRadians],
@@ -359,13 +384,14 @@ function Planet({
     const segments = 1024;
     return Array.from({ length: segments + 1 }, (_, i) => {
       const E = (i / segments) * Math.PI * 2;
-      return [
+      return tiltOrbitalPosition(
         semiMajorAxis * (Math.cos(E) - eccentricity),
-        0,
         semiMinorAxis * Math.sin(E),
-      ] as [number, number, number];
+        inclinationRadians,
+        ascendingNodeRadians,
+      );
     });
-  }, [semiMajorAxis, eccentricity, semiMinorAxis]);
+  }, [semiMajorAxis, eccentricity, semiMinorAxis, inclinationRadians, ascendingNodeRadians]);
 
   // Apply axial tilt once on mount/update without making the mesh a
   // controlled prop; mutating rotation in useFrame must not be clobbered by
@@ -389,15 +415,20 @@ function Planet({
     const meanAnomaly = ((simulation.time / period) * 2 * Math.PI) % (2 * Math.PI);
     const eccentricAnomaly = solveEccentricAnomaly(meanAnomaly, eccentricity);
 
-    // Converting eccentric anomaly to an (x, z) point on the ellipse. The sun
-    // sits at the ellipse's focus, not its center, so the center is offset by
-    // a·e — this is what makes the planet speed up near the sun (perihelion)
-    // and slow down far from it (aphelion), per Kepler's second law, without
-    // us ever simulating a force.
+    // Converting eccentric anomaly to a point on the ellipse. The sun sits at
+    // the ellipse's focus, not its center, so the center is offset by a·e —
+    // this is what makes the planet speed up near the sun (perihelion) and
+    // slow down far from it (aphelion), per Kepler's second law, without us
+    // ever simulating a force. tiltOrbitalPosition then rotates that flat
+    // in-plane point into this orbit's actual (usually slightly tilted) 3D
+    // plane, so the planet doesn't just move along the flat orbit line.
     group.current.position.set(
-      semiMajorAxis * (Math.cos(eccentricAnomaly) - eccentricity),
-      0,
-      semiMinorAxis * Math.sin(eccentricAnomaly),
+      ...tiltOrbitalPosition(
+        semiMajorAxis * (Math.cos(eccentricAnomaly) - eccentricity),
+        semiMinorAxis * Math.sin(eccentricAnomaly),
+        inclinationRadians,
+        ascendingNodeRadians,
+      ),
     );
 
     // Sun is always at the origin, so world-space (== group-local, since
