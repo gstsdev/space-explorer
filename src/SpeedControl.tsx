@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { simulation } from "./simulation";
-import { DEFAULT_SPEED_EXPONENT, MAX_SPEED_EXPONENT, SECONDS_PER_YEAR } from "./astronomy";
+import { DEFAULT_SPEED_EXPONENT, J2000_EPOCH_MS, MAX_SPEED_EXPONENT, SECONDS_PER_YEAR } from "./astronomy";
 
 // simulation.speed is "simulated seconds elapsed per real second" — this
 // expresses that as a duration in whatever unit reads best, so 1x shows as
@@ -28,6 +28,25 @@ export function SpeedControl() {
   // Mirrors simulation.speed for display only — the frame loop reads the
   // shared object directly, so dragging the slider doesn't re-render the Canvas tree.
   const [exponent, setExponent] = useState(DEFAULT_SPEED_EXPONENT);
+  // Written directly via ref every animation frame rather than through React
+  // state — this component lives outside the Canvas (no useFrame), and at
+  // high playback speeds the date needs to visibly tick every frame, not
+  // just once a second; routing that through setState would re-render this
+  // whole component just to update one line of text.
+  const dateRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let frame: number;
+    const update = () => {
+      if (dateRef.current) {
+        const date = new Date(J2000_EPOCH_MS + simulation.time * 1000);
+        dateRef.current.textContent = date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+      }
+      frame = requestAnimationFrame(update);
+    };
+    frame = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(frame);
+  }, []);
 
   return (
     <div
@@ -50,6 +69,7 @@ export function SpeedControl() {
         userSelect: "none",
       }}
     >
+      <div ref={dateRef} style={{ opacity: 0.7 }} />
       <label htmlFor="speed-slider">Time scale: {formatSpeed(10 ** exponent)}</label>
       <input
         id="speed-slider"

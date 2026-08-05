@@ -64,10 +64,11 @@ export function secondsSinceJ2000(date: Date = new Date()): number {
 // this is roughly where it starts strobing rather than orbiting smoothly.
 export const MAX_SPEED_EXPONENT = Math.log10(10 * SECONDS_PER_YEAR);
 
-// Default: 12 hours of simulated time per real second — the max is an
-// extreme "fast-forward to watch Neptune move" ceiling, not something the
-// app should open already running at.
-export const DEFAULT_SPEED_EXPONENT = Math.log10(12 * 3600);
+// Default: 1 second of simulated time per real second — true real time, so
+// the app opens tracking each planet's actual current position live. The max
+// is an extreme "fast-forward to watch Neptune move" ceiling, not something
+// the app should open already running at.
+export const DEFAULT_SPEED_EXPONENT = 0;
 
 // A planet's full texture set — deliberately all-or-nothing (rather than
 // each map individually optional) since specular/normal maps are meaningless
