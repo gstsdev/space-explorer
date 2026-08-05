@@ -46,14 +46,15 @@ const ZOOM_BURST_WINDOW_MS = 220;
 // of staying fixed.
 //
 // far, on the other hand, must stay fixed but comfortably cover the worst
-// case: the camera can sit up to maxDistance (6000) from its target, and the
-// target itself can be up to Neptune's aphelion (~4566 units) from the sun —
-// so the far side of Neptune's orbit line can be up to roughly
-// 6000 + 4566 + 4566 ≈ 15,100 units from the camera. 10,000 clipped that,
-// which showed up as a gap in the orbit line (not a camera-angle bug).
+// case: the camera can sit up to maxDistance from its target, and the target
+// itself can be up to Neptune's aphelion (~4566 units) from the sun — so the
+// far side of Neptune's orbit line can be up to roughly
+// maxDistance + 4566 + 4566 units from the camera. Undershooting this
+// clips the orbit line (not a camera-angle bug — cost us a while to track
+// down the first time).
 const MIN_NEAR = 0.001;
 const NEAR_RATIO = 0.001;
-export const CAMERA_FAR = 20_000;
+export const CAMERA_FAR = 30_000;
 
 export function CameraRig({ focusTarget }: { focusTarget: RefObject<Object3D | null> }) {
   const controls = useRef<OrbitControlsImpl>(null);
@@ -145,7 +146,10 @@ export function CameraRig({ focusTarget }: { focusTarget: RefObject<Object3D | n
       enablePan={false}
       // minDistance is overridden every frame above, per focused body.
       minDistance={DEFAULT_MIN_DISTANCE}
-      maxDistance={6000}
+      // Neptune's aphelion is ~4566 units out — fitting its full orbit in
+      // frame at 50° FOV needs a camera distance of ~4566/sin(25°) ≈ 10,800
+      // just to touch the frame edges. 15,000 leaves real margin.
+      maxDistance={15_000}
       // OrbitControls' own pole guard (Spherical.makeSafe) only keeps ~1e-6
       // radians of margin from straight up/down — nowhere near enough to
       // avoid the numerical instability in Object3D.lookAt() when the view
