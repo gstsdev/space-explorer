@@ -575,7 +575,7 @@ function SunGlare() {
           ref={material}
           transparent
           depthWrite={false}
-          depthTest={false}
+          depthTest={true}
           blending={AdditiveBlending}
           uniforms={{ opacity: { value: 1 } }}
           vertexShader={`
