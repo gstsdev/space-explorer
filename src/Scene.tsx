@@ -462,18 +462,21 @@ function Planet({
     if (!group.current) return;
 
     const distance = state.camera.position.distanceTo(group.current.position);
-    // With placeholders off, always show the real (true-scale) mesh instead
-    // of hiding the body past switchDistance — from realistic distances it's
-    // sub-pixel anyway, so it naturally reads as a small point of light, the
-    // same reason real planets look like stars to the naked eye.
-    const showReal = distance < switchDistance || !showPlaceholder;
+    const closeEnough = distance < switchDistance;
+    // With placeholders off, keep the real mesh visible even past
+    // switchDistance — same as the sun — instead of hiding it. From
+    // realistic distances it's genuinely sub-pixel and invisible out there;
+    // we tried standing in a glow for it, but even that was too small at
+    // true scale to be worth the added complexity, so this is now an
+    // honest (if often literally invisible) "this is where it really is."
+    const showReal = closeEnough || !showPlaceholder;
     if (mesh.current) mesh.current.visible = showReal;
     if (placeholder.current) {
-      placeholder.current.visible = !showReal && showPlaceholder;
+      placeholder.current.visible = !closeEnough && showPlaceholder;
       placeholder.current.scale.setScalar(distance * PLACEHOLDER_SIZE);
     }
     if (selectionRing.current) {
-      selectionRing.current.visible = !showReal && showPlaceholder && selected;
+      selectionRing.current.visible = !closeEnough && showPlaceholder && selected;
       selectionRing.current.scale.setScalar(distance * PLACEHOLDER_SIZE);
     }
   }, FRAME_PRIORITY.updateVisibility);
