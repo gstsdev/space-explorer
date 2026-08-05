@@ -51,11 +51,10 @@ export const SECONDS_PER_YEAR = 31_557_600; // Julian year
 // this is roughly where it starts strobing rather than orbiting smoothly.
 export const MAX_SPEED_EXPONENT = Math.log10(10 * SECONDS_PER_YEAR);
 
-// Default sits well below the (now much higher) max, at the pacing the scene
-// originally shipped with (Mercury ~7.6s/lap, Earth ~31.6s/lap) — the max is
-// an extreme "fast-forward to watch Neptune move" ceiling, not something the
+// Default: 12 hours of simulated time per real second — the max is an
+// extreme "fast-forward to watch Neptune move" ceiling, not something the
 // app should open already running at.
-export const DEFAULT_SPEED_EXPONENT = 6;
+export const DEFAULT_SPEED_EXPONENT = Math.log10(12 * 3600);
 
 // A planet's full texture set — deliberately all-or-nothing (rather than
 // each map individually optional) since specular/normal maps are meaningless
