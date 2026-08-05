@@ -108,6 +108,11 @@ export type PlanetData = {
   // what lets the simulation clock start at the planet's actual real-world
   // orbital phase instead of everyone lining up at perihelion.
   meanAnomalyAtEpochDegrees?: number;
+  // Real prime-meridian rotation angle (IAU "W0") at the J2000.0 epoch, in
+  // degrees — the axial-spin counterpart to meanAnomalyAtEpochDegrees. Without
+  // it the visible face was whatever rotation.y happened to be 0 at mount,
+  // never the real one.
+  rotationAtEpochDegrees?: number;
   textures?: PlanetTextures;
   ring?: PlanetRingData;
 };
@@ -132,6 +137,7 @@ export const PLANETS: PlanetData[] = [
     inclinationDegrees: 7.005,
     ascendingNodeDegrees: 48.331,
     meanAnomalyAtEpochDegrees: 174.796,
+    rotationAtEpochDegrees: 329.548,
     textures: {
       map: "/textures/mercury/map.jpg",
     },
@@ -147,6 +153,7 @@ export const PLANETS: PlanetData[] = [
     inclinationDegrees: 3.39458,
     ascendingNodeDegrees: 76.68,
     meanAnomalyAtEpochDegrees: 50.377,
+    rotationAtEpochDegrees: 160.2,
     textures: {
       map: "/textures/venus/map.jpg",
     },
@@ -160,6 +167,7 @@ export const PLANETS: PlanetData[] = [
     rotationPeriodDays: 0.99726968,
     axialTiltDegrees: 23.44,
     meanAnomalyAtEpochDegrees: 357.527,
+    rotationAtEpochDegrees: 190.147,
     textures: {
       map: "/textures/earth/map.jpg",
       normalMap: "/textures/earth/normal.png",
@@ -178,6 +186,7 @@ export const PLANETS: PlanetData[] = [
     inclinationDegrees: 1.85,
     ascendingNodeDegrees: 49.558,
     meanAnomalyAtEpochDegrees: 19.39,
+    rotationAtEpochDegrees: 176.63,
     textures: {
       map: "/textures/mars/map.jpg",
     },
@@ -193,6 +202,7 @@ export const PLANETS: PlanetData[] = [
     inclinationDegrees: 1.303,
     ascendingNodeDegrees: 100.464,
     meanAnomalyAtEpochDegrees: 19.668,
+    rotationAtEpochDegrees: 284.95,
     textures: {
       map: "/textures/jupiter/map.jpg",
     },
@@ -208,6 +218,7 @@ export const PLANETS: PlanetData[] = [
     inclinationDegrees: 2.485,
     ascendingNodeDegrees: 113.665,
     meanAnomalyAtEpochDegrees: 317.355,
+    rotationAtEpochDegrees: 38.9,
     textures: {
       map: "/textures/saturn/map.jpg",
     },
@@ -229,6 +240,7 @@ export const PLANETS: PlanetData[] = [
     inclinationDegrees: 0.773,
     ascendingNodeDegrees: 74.006,
     meanAnomalyAtEpochDegrees: 142.284,
+    rotationAtEpochDegrees: 203.81,
     textures: {
       map: "/textures/uranus/map.jpg",
     },
@@ -244,6 +256,7 @@ export const PLANETS: PlanetData[] = [
     inclinationDegrees: 1.77,
     ascendingNodeDegrees: 131.784,
     meanAnomalyAtEpochDegrees: 259.915,
+    rotationAtEpochDegrees: 253.18,
     textures: {
       map: "/textures/neptune/map.jpg",
     },

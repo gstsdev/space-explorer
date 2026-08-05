@@ -320,6 +320,7 @@ type PlanetProps = {
   inclinationDegrees?: number;
   ascendingNodeDegrees?: number;
   meanAnomalyAtEpochDegrees?: number;
+  rotationAtEpochDegrees?: number;
   selected: boolean;
   textures?: PlanetTextures;
   ring?: PlanetRingData;
@@ -339,6 +340,7 @@ function Planet({
   inclinationDegrees = 0,
   ascendingNodeDegrees = 0,
   meanAnomalyAtEpochDegrees = 0,
+  rotationAtEpochDegrees = 0,
   selected,
   textures,
   ring,
@@ -370,6 +372,7 @@ function Planet({
   const inclinationRadians = (inclinationDegrees * Math.PI) / 180;
   const ascendingNodeRadians = (ascendingNodeDegrees * Math.PI) / 180;
   const meanAnomalyAtEpochRadians = (meanAnomalyAtEpochDegrees * Math.PI) / 180;
+  const rotationAtEpochRadians = (rotationAtEpochDegrees * Math.PI) / 180;
   const ringInverseRotation = useMemo(
     () => new Quaternion().setFromEuler(new Euler(Math.PI / 2 + axialTiltRadians, 0, 0)).invert(),
     [axialTiltRadians],
@@ -412,7 +415,7 @@ function Planet({
   // Runs before CameraRig: advances this planet along its orbit for the
   // current frame using this frame's already-advanced simulation time (see
   // FRAME_PRIORITY — SimulationClock runs even earlier).
-  useFrame((_, delta) => {
+  useFrame(() => {
     if (!group.current) return;
 
     // Mean anomaly: where the planet would be if it moved at constant speed
@@ -449,10 +452,14 @@ function Planet({
     localSunDirection.current.set(0, 0, 0).sub(group.current.position).normalize();
 
     if (mesh.current) {
-      // Advance the surface spin using the shared simulation clock so changing
-      // playback speed affects day/night cycle timing as expected.
-      mesh.current.rotation.y +=
-        rotationRadiansPerSecond * delta * simulation.speed;
+      // Computed directly from simulation.time (seconds since J2000.0), the
+      // same way orbital position is above, rather than accumulated with +=
+      // from a rotation.y of 0 at mount — accumulating from 0 ignored
+      // however much simulation.time already had elapsed by the time this
+      // component mounted, so the visible face never matched the real one at
+      // "now". rotationAtEpochRadians anchors the real phase at that epoch.
+      mesh.current.rotation.y =
+        rotationAtEpochRadians + rotationRadiansPerSecond * simulation.time;
 
       // Rotating the local sun direction into this mesh's object space right
       // here (rather than in TexturedSurface's own frame) means it's always
@@ -721,6 +728,7 @@ export function Scene({
           inclinationDegrees={planet.inclinationDegrees}
           ascendingNodeDegrees={planet.ascendingNodeDegrees}
           meanAnomalyAtEpochDegrees={planet.meanAnomalyAtEpochDegrees}
+          rotationAtEpochDegrees={planet.rotationAtEpochDegrees}
           selected={selectedId === planet.id}
           textures={planet.textures}
           ring={planet.ring}
