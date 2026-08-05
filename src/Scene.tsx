@@ -674,6 +674,8 @@ export function Scene({ selectedId, onFocus }: { selectedId: string | null; onFo
           eccentricity={planet.eccentricity}
           rotationPeriodDays={planet.rotationPeriodDays}
           axialTiltDegrees={planet.axialTiltDegrees}
+          inclinationDegrees={planet.inclinationDegrees}
+          ascendingNodeDegrees={planet.ascendingNodeDegrees}
           selected={selectedId === planet.id}
           textures={planet.textures}
           ring={planet.ring}

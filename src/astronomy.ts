@@ -82,6 +82,14 @@ export type PlanetData = {
   eccentricity: number;
   rotationPeriodDays: number;
   axialTiltDegrees?: number;
+  // Orbital plane tilt relative to Earth's (the ecliptic) — real orbits
+  // aren't coplanar, so without this every planet traces a flat line in the
+  // same plane. inclinationDegrees is the tilt itself; ascendingNodeDegrees
+  // is which direction (around the vertical axis) that tilt points — two
+  // planets can share the same inclination but dip above/below the plane at
+  // completely different points in their orbit depending on this.
+  inclinationDegrees?: number;
+  ascendingNodeDegrees?: number;
   textures?: PlanetTextures;
   ring?: PlanetRingData;
 };
@@ -103,6 +111,8 @@ export const PLANETS: PlanetData[] = [
     eccentricity: 0.2056,
     rotationPeriodDays: 58.646,
     axialTiltDegrees: 0.034,
+    inclinationDegrees: 7.005,
+    ascendingNodeDegrees: 48.331,
     textures: {
       map: "/textures/mercury/map.jpg",
     },
@@ -115,6 +125,8 @@ export const PLANETS: PlanetData[] = [
     eccentricity: 0.0068,
     rotationPeriodDays: 243.025,
     axialTiltDegrees: 177.36,
+    inclinationDegrees: 3.39458,
+    ascendingNodeDegrees: 76.68,
     textures: {
       map: "/textures/venus/map.jpg",
     },
@@ -142,6 +154,8 @@ export const PLANETS: PlanetData[] = [
     eccentricity: 0.0934,
     rotationPeriodDays: 1.025957,
     axialTiltDegrees: 25.19,
+    inclinationDegrees: 1.85,
+    ascendingNodeDegrees: 49.558,
     textures: {
       map: "/textures/mars/map.jpg",
     },
@@ -154,6 +168,8 @@ export const PLANETS: PlanetData[] = [
     eccentricity: 0.0489,
     rotationPeriodDays: 0.41354,
     axialTiltDegrees: 3.13,
+    inclinationDegrees: 1.303,
+    ascendingNodeDegrees: 100.464,
     textures: {
       map: "/textures/jupiter/map.jpg",
     },
@@ -166,6 +182,8 @@ export const PLANETS: PlanetData[] = [
     eccentricity: 0.0565,
     rotationPeriodDays: 0.44401,
     axialTiltDegrees: 26.73,
+    inclinationDegrees: 2.485,
+    ascendingNodeDegrees: 113.665,
     textures: {
       map: "/textures/saturn/map.jpg",
     },
@@ -184,6 +202,8 @@ export const PLANETS: PlanetData[] = [
     eccentricity: 0.0457,
     rotationPeriodDays: 0.71833,
     axialTiltDegrees: 97.77,
+    inclinationDegrees: 0.773,
+    ascendingNodeDegrees: 74.006,
     textures: {
       map: "/textures/uranus/map.jpg",
     },
@@ -196,6 +216,8 @@ export const PLANETS: PlanetData[] = [
     eccentricity: 0.0113,
     rotationPeriodDays: 0.67125,
     axialTiltDegrees: 28.32,
+    inclinationDegrees: 1.77,
+    ascendingNodeDegrees: 131.784,
     textures: {
       map: "/textures/neptune/map.jpg",
     },
