@@ -1,12 +1,12 @@
-import { useRef, useState } from "react";
+import { Suspense, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
-import { Stars } from "@react-three/drei";
 import type { Object3D } from "three";
 import { Scene } from "./Scene";
 import { CAMERA_FAR, CameraRig } from "./CameraRig";
 import { SimulationClock } from "./simulation";
 import { SpeedControl } from "./SpeedControl";
 import { StatsPanel } from "./StatsPanel";
+import { Skybox } from "./Skybox";
 import { SUN_DATA } from "./astronomy";
 
 export default function App() {
@@ -26,9 +26,12 @@ export default function App() {
         camera={{ position: [0, 2, 5.5], fov: 50, near: 0.001, far: CAMERA_FAR }}
         gl={{ logarithmicDepthBuffer: true }}
       >
+        {/* Plain black fallback while the skybox image loads (or if it fails) — */}
         <color attach="background" args={["#000000"]} />
         <ambientLight intensity={0.15} />
-        <Stars radius={8000} depth={50} count={5000} factor={4} saturation={0} fade speed={0.5} />
+        <Suspense fallback={null}>
+          <Skybox url="/textures/skybox/milkyway.jpg" />
+        </Suspense>
         <Scene
           selectedId={selectedId}
           onFocus={(object, id) => {
