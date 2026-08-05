@@ -40,7 +40,10 @@ export function SpeedControl() {
     const update = () => {
       if (dateRef.current) {
         const date = new Date(J2000_EPOCH_MS + simulation.time * 1000);
-        dateRef.current.textContent = date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+        dateRef.current.textContent = date.toLocaleString(undefined, {
+          dateStyle: "medium",
+          timeStyle: "medium",
+        });
       }
       frame = requestAnimationFrame(update);
     };
