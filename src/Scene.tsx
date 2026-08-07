@@ -72,8 +72,8 @@ const hoverCursor = {
 // 0; checking Mars's actual 3D position — not just its orbital elements —
 // against real JPL data caught that it was wrong in general. This version is
 // cross-checked against both Mars and Earth's real heliocentric position
-// (~0.03-0.05° accuracy) and, together with axialTiltRadians also being
-// negated below, Earth's real sub-solar longitude and latitude (~0.2°).)
+// (~0.03-0.05° accuracy) and, together with polePositionWorld below,
+// Earth's real sub-solar longitude and latitude (~0.2°).)
 function tiltOrbitalPosition(
   xOrb: number,
   yOrb: number,
@@ -92,6 +92,55 @@ function tiltOrbitalPosition(
   const sinI = Math.sin(inclination);
   return [x * cosO - y * sinO * cosI, y * sinI, -(x * sinO + y * cosO * cosI)];
 }
+
+// Mean obliquity of the ecliptic at J2000.0 — Earth's equatorial plane
+// relative to the ecliptic. Needed below to convert a planet's real pole
+// orientation (published by IAU/IAG as right ascension/declination in the
+// equatorial/ICRF frame) into this scene's ecliptic-based world frame.
+const OBLIQUITY_RADIANS = (23.4392911 * Math.PI) / 180;
+
+// A planet's real axial-tilt *orientation* (not just magnitude), from its
+// real north pole right ascension/declination (PlanetData.poleRaDegrees/
+// poleDecDegrees — the IAU/IAG rotational-elements convention) rather than
+// a single fixed-axis tilt angle. A single angle can only describe a
+// rotation about one fixed axis, which is only physically correct for
+// Earth — every other planet has a nonzero real ascendingNodeDegrees (its
+// orbital plane is rotated relative to Earth's), so "tilt about world +X"
+// silently assumed an equinox direction that isn't real for that planet,
+// which is why only Earth's sub-solar point ever matched real data.
+//
+// Two steps: 1) the pole's RA/Dec gives its unit vector in the equatorial
+// (ICRF) frame directly; 2) rotate that into ecliptic coordinates via the
+// obliquity — a fixed rotation about the X axis, since X (the vernal
+// equinox) is shared by both frames — then remap ecliptic (X, Y, Z=north)
+// into this app's world frame (X, Y=up, Z). That remap is (x, y, z) →
+// (x, z, -y): since Earth's own orbit defines world X as the vernal
+// equinox and world Y as "up", world is just the ecliptic frame rotated
+// -90° about the shared X axis — a pure rotation (not a mirroring), so it
+// composes safely with tiltOrbitalPosition's own z-negation above.
+//
+// For Earth (RA=0, Dec=90) this reduces exactly to the old single-axis
+// rotation about world X by -obliquity, so Earth's already-verified
+// result is unaffected. For every other planet it was checked against
+// real JPL Horizons sub-solar latitude and, unlike the old single-axis
+// code, actually lands in the right hemisphere at the right magnitude
+// (e.g. Uranus: was −61°, now ~+71° against a real +73°).
+function polePositionWorld(poleRaDegrees: number, poleDecDegrees: number): Vector3 {
+  const ra = (poleRaDegrees * Math.PI) / 180;
+  const dec = (poleDecDegrees * Math.PI) / 180;
+  const xEquatorial = Math.cos(dec) * Math.cos(ra);
+  const yEquatorial = Math.cos(dec) * Math.sin(ra);
+  const zEquatorial = Math.sin(dec);
+
+  const cosObliquity = Math.cos(OBLIQUITY_RADIANS);
+  const sinObliquity = Math.sin(OBLIQUITY_RADIANS);
+  const yEcliptic = yEquatorial * cosObliquity + zEquatorial * sinObliquity;
+  const zEcliptic = -yEquatorial * sinObliquity + zEquatorial * cosObliquity;
+
+  return new Vector3(xEquatorial, zEcliptic, -yEcliptic);
+}
+
+const NORTH_POLE_AXIS = new Vector3(0, 1, 0);
 
 function capitalize(id: string) {
   return id[0].toUpperCase() + id.slice(1);
@@ -208,12 +257,12 @@ function TexturedSurface({
  
 function PlanetRing({
   ring,
-  axialTiltRadians,
+  ringQuaternion,
   radius,
   sunDirection,
 }: {
   ring: PlanetRingData;
-  axialTiltRadians: number;
+  ringQuaternion: Quaternion;
   radius: number;
   sunDirection: RefObject<Vector3>;
 }) {
@@ -265,7 +314,7 @@ function PlanetRing({
   }, FRAME_PRIORITY.updateVisibility);
 
   return (
-    <mesh geometry={ringGeometry} rotation={[Math.PI / 2 + axialTiltRadians, 0, 0]}>
+    <mesh geometry={ringGeometry} quaternion={ringQuaternion}>
       <meshPhongMaterial
         map={texture}
         transparent
@@ -351,7 +400,8 @@ type PlanetProps = {
   semiMajorAxis: number; // true-scale orbit size, in scene units
   eccentricity: number; // 0 = circle, closer to 1 = more stretched-out ellipse
   rotationPeriodDays?: number;
-  axialTiltDegrees?: number;
+  poleRaDegrees?: number;
+  poleDecDegrees?: number;
   inclinationDegrees?: number;
   ascendingNodeDegrees?: number;
   meanAnomalyAtEpochDegrees?: number;
@@ -372,7 +422,8 @@ function Planet({
   semiMajorAxis,
   eccentricity,
   rotationPeriodDays = 1,
-  axialTiltDegrees = 0,
+  poleRaDegrees = 0,
+  poleDecDegrees = 90,
   inclinationDegrees = 0,
   ascendingNodeDegrees = 0,
   meanAnomalyAtEpochDegrees = 0,
@@ -405,20 +456,33 @@ function Planet({
   // ever translates) — the un-rotated base that sunDirection/ringSunDirection
   // are each derived from below.
   const localSunDirection = useRef(new Vector3(0, 0, 1));
-  // Negated for the same reason tiltOrbitalPosition negates z — this is the
-  // sibling half of that handedness fix. Without it, latitude/season came
-  // out exactly mirrored (verified: a real northern-hemisphere summer showed
-  // up as winter) even with tiltOrbitalPosition's own fix already in place.
-  const axialTiltRadians = -(axialTiltDegrees * Math.PI) / 180;
+  // Fresh spin-only quaternion, recomputed and combined with tiltQuaternion
+  // every frame below — kept as a ref so that doesn't allocate per frame.
+  const spinQuaternion = useRef(new Quaternion());
   const inclinationRadians = (inclinationDegrees * Math.PI) / 180;
   const ascendingNodeRadians = (ascendingNodeDegrees * Math.PI) / 180;
   const meanAnomalyAtEpochRadians = (meanAnomalyAtEpochDegrees * Math.PI) / 180;
   const rotationAtEpochRadians = (rotationAtEpochDegrees * Math.PI) / 180;
   const argumentOfPeriapsisRadians = (argumentOfPeriapsisDegrees * Math.PI) / 180;
-  const ringInverseRotation = useMemo(
-    () => new Quaternion().setFromEuler(new Euler(Math.PI / 2 + axialTiltRadians, 0, 0)).invert(),
-    [axialTiltRadians],
+  // The rotation that takes this mesh's local spin axis (+Y) to this
+  // planet's real pole direction in world space — see polePositionWorld.
+  const tiltQuaternion = useMemo(
+    () =>
+      new Quaternion().setFromUnitVectors(
+        NORTH_POLE_AXIS,
+        polePositionWorld(poleRaDegrees, poleDecDegrees),
+      ),
+    [poleRaDegrees, poleDecDegrees],
   );
+  // The ring's own orientation: bring its flat XY-plane geometry into the
+  // planet's equatorial plane (a fixed +90° about local X, same as the old
+  // single-axis code) before applying the same real pole tilt as the mesh,
+  // so the ring lies in the planet's real equatorial plane, not a fixed one.
+  const ringQuaternion = useMemo(
+    () => tiltQuaternion.clone().multiply(new Quaternion().setFromEuler(new Euler(Math.PI / 2, 0, 0))),
+    [tiltQuaternion],
+  );
+  const ringInverseRotation = useMemo(() => ringQuaternion.clone().invert(), [ringQuaternion]);
   // Ring around the placeholder marking it as the current selection — kept
   // in lockstep with the placeholder's own scale in the same frame, below.
   const selectionRing = useRef<Mesh>(null);
@@ -452,15 +516,6 @@ function Planet({
     inclinationRadians,
     ascendingNodeRadians,
   ]);
-
-  // Apply axial tilt once on mount/update without making the mesh a
-  // controlled prop; mutating rotation in useFrame must not be clobbered by
-  // React re-applying a JSX rotation prop each render.
-  useEffect(() => {
-    if (mesh.current) {
-      mesh.current.rotation.x = axialTiltRadians;
-    }
-  }, [axialTiltRadians]);
 
   // Runs before CameraRig: advances this planet along its orbit for the
   // current frame using this frame's already-advanced simulation time (see
@@ -519,14 +574,25 @@ function Planet({
       // sub-solar longitude still came out exactly half a turn off without
       // this term. Should carry over to every other planet's texture as-is,
       // independent of each one's own epoch constant.
-      mesh.current.rotation.y =
+      const spinAngle =
         (Math.PI + (rotationAtEpochRadians + rotationRadiansPerSecond * simulation.time)) %
         (2 * Math.PI);
+      // Spin happens first, about the mesh's own local +Y (its pre-tilt
+      // pole axis), then the whole thing is tilted to the real pole
+      // direction — the same "spin, then tilt" composition the old
+      // rotation.x/rotation.y Euler pair gave for free (Euler 'XYZ' applies
+      // Y before X), generalized to a non-axis-aligned tilt via explicit
+      // quaternion composition since tiltQuaternion isn't a pure X rotation
+      // for most planets.
+      spinQuaternion.current.setFromAxisAngle(NORTH_POLE_AXIS, spinAngle);
+      mesh.current.quaternion.multiplyQuaternions(tiltQuaternion, spinQuaternion.current);
 
       // Rotating the local sun direction into this mesh's object space right
       // here (rather than in TexturedSurface's own frame) means it's always
-      // computed from this exact rotation.y update, never a stale one.
-      mesh.current.getWorldQuaternion(inverseRotation.current).invert();
+      // computed from this exact spin update, never a stale one. mesh's
+      // local quaternion doubles as its world quaternion since the parent
+      // group only ever translates (see localSunDirection's comment above).
+      inverseRotation.current.copy(mesh.current.quaternion).invert();
       sunDirection.current.copy(localSunDirection.current).applyQuaternion(inverseRotation.current);
 
       ringSunDirection.current.copy(localSunDirection.current).applyQuaternion(ringInverseRotation);
@@ -607,7 +673,7 @@ function Planet({
         {ring ? (
           <PlanetRing
             ring={ring}
-            axialTiltRadians={axialTiltRadians}
+            ringQuaternion={ringQuaternion}
             radius={radius}
             sunDirection={ringSunDirection}
           />
@@ -786,7 +852,8 @@ export function Scene({
           semiMajorAxis={planet.semiMajorAxisKm * KM_TO_UNITS}
           eccentricity={planet.eccentricity}
           rotationPeriodDays={planet.rotationPeriodDays}
-          axialTiltDegrees={planet.axialTiltDegrees}
+          poleRaDegrees={planet.poleRaDegrees}
+          poleDecDegrees={planet.poleDecDegrees}
           inclinationDegrees={planet.inclinationDegrees}
           ascendingNodeDegrees={planet.ascendingNodeDegrees}
           meanAnomalyAtEpochDegrees={planet.meanAnomalyAtEpochDegrees}

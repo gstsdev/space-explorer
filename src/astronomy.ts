@@ -94,7 +94,34 @@ export type PlanetData = {
   semiMajorAxisKm: number;
   eccentricity: number;
   rotationPeriodDays: number;
+  // Real obliquity magnitude — display only (StatsPanel). NOT used to
+  // orient the 3D mesh: a single tilt angle can only describe a rotation
+  // about one fixed axis, which is only physically correct for Earth (see
+  // poleRaDegrees/poleDecDegrees below for what actually drives rendering).
   axialTiltDegrees?: number;
+  // Real north pole orientation at J2000.0, as right ascension/declination
+  // in the equatorial (ICRF) frame — the IAU/IAG WGCCRE rotational-elements
+  // convention (values from the SPICE pck00011.tpc kernel's POLE_RA/
+  // POLE_DEC constant terms; the small per-century precession coefficients
+  // are dropped as negligible next to this app's other approximations).
+  // This is what actually orients each planet's mesh: axialTiltDegrees
+  // alone (a single rotation about world +X) only happens to be correct
+  // for Earth, because Earth's own equator defines the reference frame
+  // these RA/Dec values are measured against (ascendingNodeDegrees=0) — see
+  // Scene.tsx's polePositionWorld for how this converts into world space.
+  // IAU convention always lists the pole on the invariable-plane-north
+  // side regardless of spin direction (unlike the axialTiltDegrees-based
+  // "flip past 90° for retrograde" convention above) — do not flip this
+  // pole for Venus/Uranus. Fixes sub-solar *latitude* for every planet,
+  // verified against real JPL Horizons data (previously wrong for all 7
+  // non-Earth planets — e.g. Uranus computed −61° against a real +73°).
+  // Longitude still uses each planet's existing rotationAtEpochDegrees
+  // (real IAU W0) unadjusted; unlike Earth's, these haven't been
+  // individually empirically recalibrated against Horizons, so sub-solar
+  // longitude for non-Earth planets, while now driven by the right pole
+  // axis, isn't verified to the same precision as latitude.
+  poleRaDegrees?: number;
+  poleDecDegrees?: number;
   // Orbital plane tilt relative to Earth's (the ecliptic) — real orbits
   // aren't coplanar, so without this every planet traces a flat line in the
   // same plane. inclinationDegrees is the tilt itself; ascendingNodeDegrees
@@ -147,6 +174,8 @@ export const PLANETS: PlanetData[] = [
     eccentricity: 0.2056,
     rotationPeriodDays: 58.646,
     axialTiltDegrees: 0.034,
+    poleRaDegrees: 281.0103,
+    poleDecDegrees: 61.4155,
     inclinationDegrees: 7.005,
     ascendingNodeDegrees: 48.331,
     argumentOfPeriapsisDegrees: 29.127,
@@ -164,6 +193,8 @@ export const PLANETS: PlanetData[] = [
     eccentricity: 0.0068,
     rotationPeriodDays: 243.025,
     axialTiltDegrees: 177.36,
+    poleRaDegrees: 272.76,
+    poleDecDegrees: 67.16,
     inclinationDegrees: 3.39458,
     ascendingNodeDegrees: 76.68,
     argumentOfPeriapsisDegrees: 54.923,
@@ -181,6 +212,8 @@ export const PLANETS: PlanetData[] = [
     eccentricity: 0.0167,
     rotationPeriodDays: 0.99726968,
     axialTiltDegrees: 23.44,
+    poleRaDegrees: 0,
+    poleDecDegrees: 90,
     // Earth's ascendingNodeDegrees is 0 (it defines the reference plane), so
     // this is the full angle from perihelion to the vernal equinox — see
     // PlanetData.argumentOfPeriapsisDegrees; this is the one value in this
@@ -210,6 +243,8 @@ export const PLANETS: PlanetData[] = [
     eccentricity: 0.0934,
     rotationPeriodDays: 1.025957,
     axialTiltDegrees: 25.19,
+    poleRaDegrees: 317.269202,
+    poleDecDegrees: 54.432516,
     inclinationDegrees: 1.85,
     ascendingNodeDegrees: 49.558,
     argumentOfPeriapsisDegrees: 286.497,
@@ -227,6 +262,8 @@ export const PLANETS: PlanetData[] = [
     eccentricity: 0.0489,
     rotationPeriodDays: 0.41354,
     axialTiltDegrees: 3.13,
+    poleRaDegrees: 268.056595,
+    poleDecDegrees: 64.495303,
     inclinationDegrees: 1.303,
     ascendingNodeDegrees: 100.464,
     argumentOfPeriapsisDegrees: 274.255,
@@ -244,6 +281,8 @@ export const PLANETS: PlanetData[] = [
     eccentricity: 0.0565,
     rotationPeriodDays: 0.44401,
     axialTiltDegrees: 26.73,
+    poleRaDegrees: 40.589,
+    poleDecDegrees: 83.537,
     inclinationDegrees: 2.485,
     ascendingNodeDegrees: 113.665,
     argumentOfPeriapsisDegrees: 338.936,
@@ -267,6 +306,8 @@ export const PLANETS: PlanetData[] = [
     eccentricity: 0.0457,
     rotationPeriodDays: 0.71833,
     axialTiltDegrees: 97.77,
+    poleRaDegrees: 257.311,
+    poleDecDegrees: -15.175,
     inclinationDegrees: 0.773,
     ascendingNodeDegrees: 74.006,
     argumentOfPeriapsisDegrees: 96.937,
@@ -284,6 +325,8 @@ export const PLANETS: PlanetData[] = [
     eccentricity: 0.0113,
     rotationPeriodDays: 0.67125,
     axialTiltDegrees: 28.32,
+    poleRaDegrees: 299.36,
+    poleDecDegrees: 43.46,
     inclinationDegrees: 1.77,
     ascendingNodeDegrees: 131.784,
     argumentOfPeriapsisDegrees: 273.181,
