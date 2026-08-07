@@ -108,10 +108,13 @@ export type PlanetData = {
   // what lets the simulation clock start at the planet's actual real-world
   // orbital phase instead of everyone lining up at perihelion.
   meanAnomalyAtEpochDegrees?: number;
-  // Real prime-meridian rotation angle (IAU "W0") at the J2000.0 epoch, in
-  // degrees — the axial-spin counterpart to meanAnomalyAtEpochDegrees. Without
-  // it the visible face was whatever rotation.y happened to be 0 at mount,
-  // never the real one.
+  // Real prime-meridian rotation angle at the J2000.0 epoch, in degrees — the
+  // axial-spin counterpart to meanAnomalyAtEpochDegrees. Must be referenced
+  // from the vernal equinox (this app's world +X, same as every orbital
+  // ascendingNodeDegrees) — Earth's uses GMST0 for exactly that reason; see
+  // its comment below before reusing the IAU's own per-body W0 values here,
+  // since those are referenced from each body's own ICRF equatorial node
+  // instead, a different frame that silently produced a ~90° error for Earth.
   rotationAtEpochDegrees?: number;
   textures?: PlanetTextures;
   ring?: PlanetRingData;
@@ -167,7 +170,15 @@ export const PLANETS: PlanetData[] = [
     rotationPeriodDays: 0.99726968,
     axialTiltDegrees: 23.44,
     meanAnomalyAtEpochDegrees: 357.527,
-    rotationAtEpochDegrees: 190.147,
+    // GMST₀ (Greenwich Mean Sidereal Time at J2000.0), not the IAU W₀ value —
+    // GMST is referenced from the vernal equinox, the same reference this
+    // app's world +X axis and every orbital ascendingNodeDegrees uses. The
+    // IAU's own W₀ (190.147°) is referenced from Earth's equator's ascending
+    // node on the ICRF instead, an unrelated frame — using it here silently
+    // introduced a ~90° phase error (this app's cross-checked, verifiably
+    // correct spin constant for Earth; the other planets' epoch constants
+    // below share the same category of frame mismatch, just unverified).
+    rotationAtEpochDegrees: 280.461,
     textures: {
       map: "/textures/earth/map.jpg",
       normalMap: "/textures/earth/normal.png",
