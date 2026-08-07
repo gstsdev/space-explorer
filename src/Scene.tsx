@@ -458,8 +458,19 @@ function Planet({
       // however much simulation.time already had elapsed by the time this
       // component mounted, so the visible face never matched the real one at
       // "now". rotationAtEpochRadians anchors the real phase at that epoch.
+      //
+      // The extra Math.PI is a geometry correction, not an astronomy one,
+      // and was pinned down empirically (checked against a real clock and
+      // location) rather than fully re-derived here: per SphereGeometry's
+      // own UV formula (x = -r·cos(u·2π)), this texture's prime meridian
+      // (u=0.5 — confirmed by eye, Europe/Africa sit at the image's
+      // horizontal center) lands on local +X at rotation.y=0, yet the real
+      // sub-solar longitude still came out exactly half a turn off without
+      // this term. Should carry over to every other planet's texture as-is,
+      // independent of each one's own epoch constant.
       mesh.current.rotation.y =
-        rotationAtEpochRadians + rotationRadiansPerSecond * simulation.time;
+        (Math.PI + (rotationAtEpochRadians + rotationRadiansPerSecond * simulation.time)) %
+        (2 * Math.PI);
 
       // Rotating the local sun direction into this mesh's object space right
       // here (rather than in TexturedSurface's own frame) means it's always
