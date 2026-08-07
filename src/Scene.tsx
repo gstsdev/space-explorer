@@ -60,18 +60,20 @@ const hoverCursor = {
 // year of dates (latitude/season match held within ~0.2° throughout) —
 // see PlanetData.argumentOfPeriapsisDegrees.
 //
-// The final negated x below corrects a handedness mismatch caught by
+// The final negated z below corrects a handedness mismatch caught by
 // noticing planets visibly orbited clockwise in the running app instead of
 // the real counterclockwise-from-ecliptic-north: world X and Z, as used
 // here, formed a left-handed pair with world Y (X×Z = -Y, not +Y), the
 // opposite of the standard right-handed orbital-mechanics convention every
 // real inclination/ascendingNode/argumentOfPeriapsis value above assumes.
-// Negating Y or Z instead would equally fix the orbit's rotational sense,
-// but only negating X leaves the inclination/latitude math (already
-// verified against real data) undisturbed — confirmed by re-running that
-// same verification with this fix in place and getting the same ~0.2°
-// match, plus longitude now separately matching real data to ~0.1°
-// (previously wildly inconsistent, up to 170°+, across different dates).
+// (An earlier version of this fix negated x instead — it happened to satisfy
+// every check available at the time, including Earth's real latitude/season
+// match, but that was a coincidence of Earth's own inclination being exactly
+// 0; checking Mars's actual 3D position — not just its orbital elements —
+// against real JPL data caught that it was wrong in general. This version is
+// cross-checked against both Mars and Earth's real heliocentric position
+// (~0.03-0.05° accuracy) and, together with axialTiltRadians also being
+// negated below, Earth's real sub-solar longitude and latitude (~0.2°).)
 function tiltOrbitalPosition(
   xOrb: number,
   yOrb: number,
@@ -88,7 +90,7 @@ function tiltOrbitalPosition(
   const sinO = Math.sin(ascendingNode);
   const cosI = Math.cos(inclination);
   const sinI = Math.sin(inclination);
-  return [-(x * cosO - y * sinO * cosI), y * sinI, x * sinO + y * cosO * cosI];
+  return [x * cosO - y * sinO * cosI, y * sinI, -(x * sinO + y * cosO * cosI)];
 }
 
 function capitalize(id: string) {
@@ -403,7 +405,11 @@ function Planet({
   // ever translates) — the un-rotated base that sunDirection/ringSunDirection
   // are each derived from below.
   const localSunDirection = useRef(new Vector3(0, 0, 1));
-  const axialTiltRadians = (axialTiltDegrees * Math.PI) / 180;
+  // Negated for the same reason tiltOrbitalPosition negates z — this is the
+  // sibling half of that handedness fix. Without it, latitude/season came
+  // out exactly mirrored (verified: a real northern-hemisphere summer showed
+  // up as winter) even with tiltOrbitalPosition's own fix already in place.
+  const axialTiltRadians = -(axialTiltDegrees * Math.PI) / 180;
   const inclinationRadians = (inclinationDegrees * Math.PI) / 180;
   const ascendingNodeRadians = (ascendingNodeDegrees * Math.PI) / 180;
   const meanAnomalyAtEpochRadians = (meanAnomalyAtEpochDegrees * Math.PI) / 180;

@@ -187,19 +187,14 @@ export const PLANETS: PlanetData[] = [
     // file directly verified against real JPL sub-solar-point data.
     argumentOfPeriapsisDegrees: 102.938,
     meanAnomalyAtEpochDegrees: 357.527,
-    // Empirically calibrated (not the raw IAU W0 of 190.147°): after fixing
-    // tiltOrbitalPosition's world-axis handedness (see its comment), real
-    // orbital position and real spin rate were each independently verified
-    // correct on their own, yet combined sub-solar longitude was still off —
-    // by a stable ~88.23° across a full year of test dates, the signature of
-    // a single fixed miscalibration rather than a remaining structural bug.
-    // 190.147 + 88.23 ≈ 278.38, close to (but not exactly) GMST0 (280.461°,
-    // rejected earlier) — expected, since GMST0 is also vernal-equinox
-    // referenced and the frame is now genuinely correct, but this value is
-    // fit directly against real JPL sub-solar-point data (longitude AND
-    // latitude both verified within ~0.2° across five dates spanning a full
-    // year) rather than trusted from a recalled formula.
-    rotationAtEpochDegrees: 278.377,
+    // Empirically calibrated against real JPL data (not the raw IAU W0 of
+    // 190.147°) — see tiltOrbitalPosition's comment for why. Longitude alone
+    // came out a stable ~91.77° off across a full year of test dates until
+    // Scene.tsx's axialTiltRadians was also negated (a separate, sibling fix,
+    // not something to redo here); with both fixes in place, this value gives
+    // real sub-solar longitude AND latitude matches within ~0.2° across five
+    // dates spanning a full year.
+    rotationAtEpochDegrees: 98.377,
     textures: {
       map: "/textures/earth/map.jpg",
       normalMap: "/textures/earth/normal.png",
