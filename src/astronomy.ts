@@ -208,9 +208,19 @@ export const PLANETS: PlanetData[] = [
     argumentOfPeriapsisDegrees: 54.923,
     meanAnomalyAtEpochDegrees: 50.377,
     // Raw IAU W0, NOT calibrated — see rotationAtEpochDegrees's comment
-    // above. Real sub-solar longitude drifts against this app's model at
-    // ~3°/day for a reason not yet found (tracked in issue #2); latitude is
-    // unaffected and matches real data to ~0.003°.
+    // above. Real sub-solar longitude drifts against this app's model at a
+    // rate that returns to the same value every Venus year (224.7 days,
+    // checked directly — not a runaway drift), so it's a real periodic
+    // effect, not noise. Latitude is unaffected and matches real data to
+    // ~0.003°, and both suspects that would normally explain a periodic
+    // longitude-only error are individually ruled out: this app's 2-body
+    // orbital position matches JPL's real (perturbed) position within
+    // ~0.1° with no periodic component, and the tilt+spin quaternion math
+    // is algebraically the correct representation of constant-rate rigid
+    // rotation about a fixed pole. Root cause not yet found — tracked in
+    // issue #2, which also has the debugging approach that would find it
+    // (compare intermediate quantities against Horizons directly, not just
+    // the final longitude).
     rotationAtEpochDegrees: 160.2,
     textures: {
       map: "/textures/venus/map.jpg",
