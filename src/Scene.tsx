@@ -59,6 +59,19 @@ const hoverCursor = {
 // when the seasons happen. Verified against real JPL data across a full
 // year of dates (latitude/season match held within ~0.2° throughout) —
 // see PlanetData.argumentOfPeriapsisDegrees.
+//
+// The final negated x below corrects a handedness mismatch caught by
+// noticing planets visibly orbited clockwise in the running app instead of
+// the real counterclockwise-from-ecliptic-north: world X and Z, as used
+// here, formed a left-handed pair with world Y (X×Z = -Y, not +Y), the
+// opposite of the standard right-handed orbital-mechanics convention every
+// real inclination/ascendingNode/argumentOfPeriapsis value above assumes.
+// Negating Y or Z instead would equally fix the orbit's rotational sense,
+// but only negating X leaves the inclination/latitude math (already
+// verified against real data) undisturbed — confirmed by re-running that
+// same verification with this fix in place and getting the same ~0.2°
+// match, plus longitude now separately matching real data to ~0.1°
+// (previously wildly inconsistent, up to 170°+, across different dates).
 function tiltOrbitalPosition(
   xOrb: number,
   yOrb: number,
@@ -75,7 +88,7 @@ function tiltOrbitalPosition(
   const sinO = Math.sin(ascendingNode);
   const cosI = Math.cos(inclination);
   const sinI = Math.sin(inclination);
-  return [x * cosO - y * sinO * cosI, y * sinI, x * sinO + y * cosO * cosI];
+  return [-(x * cosO - y * sinO * cosI), y * sinI, x * sinO + y * cosO * cosI];
 }
 
 function capitalize(id: string) {

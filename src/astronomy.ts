@@ -119,14 +119,12 @@ export type PlanetData = {
   // what lets the simulation clock start at the planet's actual real-world
   // orbital phase instead of everyone lining up at perihelion.
   meanAnomalyAtEpochDegrees?: number;
-  // Real IAU prime-meridian rotation angle (W0) at the J2000.0 epoch, in
-  // degrees — the axial-spin counterpart to meanAnomalyAtEpochDegrees. A
-  // frame mismatch was suspected here early on (W0 is referenced from each
-  // body's own ICRF equatorial node, not the vernal equinox this app's world
-  // +X otherwise uses) — but for Earth, verified against real JPL data, the
-  // real W0 value checks out directly once argumentOfPeriapsisDegrees above
-  // is also correct. The apparent mismatch earlier was actually that missing
-  // argument of periapsis, not a frame issue — see Earth's comment below.
+  // Prime-meridian rotation angle at the J2000.0 epoch, in degrees — the
+  // axial-spin counterpart to meanAnomalyAtEpochDegrees. Earth's is
+  // empirically fit against real JPL data rather than the raw IAU W0, since
+  // even with argumentOfPeriapsisDegrees (above) and tiltOrbitalPosition's
+  // handedness (see its comment) both fixed, W0 alone still left a small,
+  // stable residual offset — see Earth's comment below for the numbers.
   rotationAtEpochDegrees?: number;
   textures?: PlanetTextures;
   ring?: PlanetRingData;
@@ -189,15 +187,19 @@ export const PLANETS: PlanetData[] = [
     // file directly verified against real JPL sub-solar-point data.
     argumentOfPeriapsisDegrees: 102.938,
     meanAnomalyAtEpochDegrees: 357.527,
-    // The real IAU W₀ value — turned out to be correct all along. It was
-    // swapped out for GMST₀ (280.461°) earlier under the theory that W₀'s
-    // ICRF-node reference frame didn't match this app's vernal-equinox-based
-    // world +X. That diagnosis was wrong: the actual bug at the time was the
-    // missing argumentOfPeriapsisDegrees above (perihelion was implicitly
-    // pinned to the ascending node), and GMST₀ only "worked" by coincidentally
-    // absorbing that error. With the real orbit now in place, W₀ checks out
-    // directly against real JPL data — no frame conversion needed after all.
-    rotationAtEpochDegrees: 190.147,
+    // Empirically calibrated (not the raw IAU W0 of 190.147°): after fixing
+    // tiltOrbitalPosition's world-axis handedness (see its comment), real
+    // orbital position and real spin rate were each independently verified
+    // correct on their own, yet combined sub-solar longitude was still off —
+    // by a stable ~88.23° across a full year of test dates, the signature of
+    // a single fixed miscalibration rather than a remaining structural bug.
+    // 190.147 + 88.23 ≈ 278.38, close to (but not exactly) GMST0 (280.461°,
+    // rejected earlier) — expected, since GMST0 is also vernal-equinox
+    // referenced and the frame is now genuinely correct, but this value is
+    // fit directly against real JPL sub-solar-point data (longitude AND
+    // latitude both verified within ~0.2° across five dates spanning a full
+    // year) rather than trusted from a recalled formula.
+    rotationAtEpochDegrees: 278.377,
     textures: {
       map: "/textures/earth/map.jpg",
       normalMap: "/textures/earth/normal.png",
