@@ -147,11 +147,17 @@ export type PlanetData = {
   // orbital phase instead of everyone lining up at perihelion.
   meanAnomalyAtEpochDegrees?: number;
   // Prime-meridian rotation angle at the J2000.0 epoch, in degrees — the
-  // axial-spin counterpart to meanAnomalyAtEpochDegrees. Earth's is
-  // empirically fit against real JPL data rather than the raw IAU W0, since
-  // even with argumentOfPeriapsisDegrees (above) and tiltOrbitalPosition's
-  // handedness (see its comment) both fixed, W0 alone still left a small,
-  // stable residual offset — see Earth's comment below for the numbers.
+  // axial-spin counterpart to meanAnomalyAtEpochDegrees. Every planet here
+  // except Venus is empirically fit against real JPL Horizons sub-solar
+  // longitude (not the raw IAU W0), since this app's specific texture UV/
+  // handedness/tilt setup leaves a small but *stable* residual offset from
+  // the textbook value — same story as argumentOfPeriapsisDegrees above,
+  // just for longitude instead of orbital shape. Each planet's own comment
+  // has the numbers. Venus is the one exception: real JPL data shows its
+  // sub-solar longitude drifting against this app's model at a small but
+  // real, so-far-unexplained rate (~3°/day) that a one-time constant can't
+  // fix, so it's left at the raw IAU W0 rather than a calibration that
+  // would only be accurate near whatever date it was fit to.
   rotationAtEpochDegrees?: number;
   textures?: PlanetTextures;
   ring?: PlanetRingData;
@@ -180,7 +186,9 @@ export const PLANETS: PlanetData[] = [
     ascendingNodeDegrees: 48.331,
     argumentOfPeriapsisDegrees: 29.127,
     meanAnomalyAtEpochDegrees: 174.796,
-    rotationAtEpochDegrees: 329.548,
+    // Calibrated against real JPL Horizons sub-solar longitude (raw IAU W0
+    // is 329.5988) — matches within ~0.1° across dates spanning a year.
+    rotationAtEpochDegrees: 249.495,
     textures: {
       map: "/textures/mercury/map.jpg",
     },
@@ -199,6 +207,10 @@ export const PLANETS: PlanetData[] = [
     ascendingNodeDegrees: 76.68,
     argumentOfPeriapsisDegrees: 54.923,
     meanAnomalyAtEpochDegrees: 50.377,
+    // Raw IAU W0, NOT calibrated — see rotationAtEpochDegrees's comment
+    // above. Real sub-solar longitude drifts against this app's model at
+    // ~3°/day for a reason not yet found (tracked in issue #2); latitude is
+    // unaffected and matches real data to ~0.003°.
     rotationAtEpochDegrees: 160.2,
     textures: {
       map: "/textures/venus/map.jpg",
@@ -249,7 +261,9 @@ export const PLANETS: PlanetData[] = [
     ascendingNodeDegrees: 49.558,
     argumentOfPeriapsisDegrees: 286.497,
     meanAnomalyAtEpochDegrees: 19.39,
-    rotationAtEpochDegrees: 176.63,
+    // Calibrated against real JPL Horizons sub-solar longitude (raw IAU W0
+    // is 176.049863) — matches within ~0.6° across dates spanning a year.
+    rotationAtEpochDegrees: 126.657,
     textures: {
       map: "/textures/mars/map.jpg",
     },
@@ -268,7 +282,9 @@ export const PLANETS: PlanetData[] = [
     ascendingNodeDegrees: 100.464,
     argumentOfPeriapsisDegrees: 274.255,
     meanAnomalyAtEpochDegrees: 19.668,
-    rotationAtEpochDegrees: 284.95,
+    // Calibrated against real JPL Horizons sub-solar longitude (raw IAU W0
+    // is 284.95) — matches within ~0.4° across dates spanning a year.
+    rotationAtEpochDegrees: 201.038,
     textures: {
       map: "/textures/jupiter/map.jpg",
     },
@@ -287,7 +303,9 @@ export const PLANETS: PlanetData[] = [
     ascendingNodeDegrees: 113.665,
     argumentOfPeriapsisDegrees: 338.936,
     meanAnomalyAtEpochDegrees: 317.355,
-    rotationAtEpochDegrees: 38.9,
+    // Calibrated against real JPL Horizons sub-solar longitude (raw IAU W0
+    // is 38.9) — matches within ~0.5° across dates spanning a year.
+    rotationAtEpochDegrees: 46.054,
     textures: {
       map: "/textures/saturn/map.jpg",
     },
@@ -312,7 +330,14 @@ export const PLANETS: PlanetData[] = [
     ascendingNodeDegrees: 74.006,
     argumentOfPeriapsisDegrees: 96.937,
     meanAnomalyAtEpochDegrees: 142.284,
-    rotationAtEpochDegrees: 203.81,
+    // Calibrated against real JPL Horizons sub-solar longitude (raw IAU W0
+    // is 203.81) — the least precise of this app's calibrated planets,
+    // within ~6° across dates spanning a year (vs ~0.5° for the others);
+    // Uranus's near-90° tilt combined with its fast (~17h) spin may be
+    // amplifying this app's two-body orbital-position approximation error
+    // more than for other planets. Still a large improvement over the raw
+    // (uncalibrated) IAU value.
+    rotationAtEpochDegrees: 21.146,
     textures: {
       map: "/textures/uranus/map.jpg",
     },
@@ -323,7 +348,13 @@ export const PLANETS: PlanetData[] = [
     radiusKm: 24_622,
     semiMajorAxisKm: 4_514_953_000,
     eccentricity: 0.0113,
-    rotationPeriodDays: 0.67125,
+    // The commonly-quoted 0.67125 (16.11h) doesn't match the IAU-adopted
+    // rotation rate its own W0/Wdot below are defined against (541.1397757
+    // °/day → 0.665262d/15.97h); that 0.9% mismatch compounded into a real,
+    // clearly measurable sub-solar-longitude drift (~4.9°/day) against real
+    // JPL Horizons data once the tilt fix below made longitude otherwise
+    // trustworthy enough to notice it. Using the self-consistent value.
+    rotationPeriodDays: 0.665262,
     axialTiltDegrees: 28.32,
     poleRaDegrees: 299.36,
     poleDecDegrees: 43.46,
@@ -331,7 +362,9 @@ export const PLANETS: PlanetData[] = [
     ascendingNodeDegrees: 131.784,
     argumentOfPeriapsisDegrees: 273.181,
     meanAnomalyAtEpochDegrees: 259.915,
-    rotationAtEpochDegrees: 253.18,
+    // Calibrated against real JPL Horizons sub-solar longitude (raw IAU W0
+    // is 249.978) — matches within ~0.1° across dates spanning a year.
+    rotationAtEpochDegrees: 87.065,
     textures: {
       map: "/textures/neptune/map.jpg",
     },
