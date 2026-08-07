@@ -103,18 +103,30 @@ export type PlanetData = {
   // completely different points in their orbit depending on this.
   inclinationDegrees?: number;
   ascendingNodeDegrees?: number;
+  // Real angle (degrees, in the direction of orbital motion) from the
+  // ascending node to perihelion — perihelion doesn't generally sit at the
+  // ascending node, so without this every orbit implicitly (and wrongly)
+  // assumed it did. For Earth specifically this is also what makes the
+  // seasons come out real: the axial tilt is only edge-on to the sun (an
+  // equinox) when Earth's position lines up with world +X, so this angle is
+  // what decides where in the orbit that actually falls. Verified against
+  // real JPL Horizons data (both this app's own math replicated in a script,
+  // and Mars's real osculating elements directly) across a full year of
+  // dates — season/latitude held within ~0.2° throughout.
+  argumentOfPeriapsisDegrees?: number;
   // Real mean anomaly (M = mean longitude − longitude of perihelion) at the
   // J2000.0 epoch, in degrees. Combined with secondsSinceJ2000(), this is
   // what lets the simulation clock start at the planet's actual real-world
   // orbital phase instead of everyone lining up at perihelion.
   meanAnomalyAtEpochDegrees?: number;
-  // Real prime-meridian rotation angle at the J2000.0 epoch, in degrees — the
-  // axial-spin counterpart to meanAnomalyAtEpochDegrees. Must be referenced
-  // from the vernal equinox (this app's world +X, same as every orbital
-  // ascendingNodeDegrees) — Earth's uses GMST0 for exactly that reason; see
-  // its comment below before reusing the IAU's own per-body W0 values here,
-  // since those are referenced from each body's own ICRF equatorial node
-  // instead, a different frame that silently produced a ~90° error for Earth.
+  // Real IAU prime-meridian rotation angle (W0) at the J2000.0 epoch, in
+  // degrees — the axial-spin counterpart to meanAnomalyAtEpochDegrees. A
+  // frame mismatch was suspected here early on (W0 is referenced from each
+  // body's own ICRF equatorial node, not the vernal equinox this app's world
+  // +X otherwise uses) — but for Earth, verified against real JPL data, the
+  // real W0 value checks out directly once argumentOfPeriapsisDegrees above
+  // is also correct. The apparent mismatch earlier was actually that missing
+  // argument of periapsis, not a frame issue — see Earth's comment below.
   rotationAtEpochDegrees?: number;
   textures?: PlanetTextures;
   ring?: PlanetRingData;
@@ -139,6 +151,7 @@ export const PLANETS: PlanetData[] = [
     axialTiltDegrees: 0.034,
     inclinationDegrees: 7.005,
     ascendingNodeDegrees: 48.331,
+    argumentOfPeriapsisDegrees: 29.127,
     meanAnomalyAtEpochDegrees: 174.796,
     rotationAtEpochDegrees: 329.548,
     textures: {
@@ -155,6 +168,7 @@ export const PLANETS: PlanetData[] = [
     axialTiltDegrees: 177.36,
     inclinationDegrees: 3.39458,
     ascendingNodeDegrees: 76.68,
+    argumentOfPeriapsisDegrees: 54.923,
     meanAnomalyAtEpochDegrees: 50.377,
     rotationAtEpochDegrees: 160.2,
     textures: {
@@ -169,16 +183,21 @@ export const PLANETS: PlanetData[] = [
     eccentricity: 0.0167,
     rotationPeriodDays: 0.99726968,
     axialTiltDegrees: 23.44,
+    // Earth's ascendingNodeDegrees is 0 (it defines the reference plane), so
+    // this is the full angle from perihelion to the vernal equinox — see
+    // PlanetData.argumentOfPeriapsisDegrees; this is the one value in this
+    // file directly verified against real JPL sub-solar-point data.
+    argumentOfPeriapsisDegrees: 102.938,
     meanAnomalyAtEpochDegrees: 357.527,
-    // GMST₀ (Greenwich Mean Sidereal Time at J2000.0), not the IAU W₀ value —
-    // GMST is referenced from the vernal equinox, the same reference this
-    // app's world +X axis and every orbital ascendingNodeDegrees uses. The
-    // IAU's own W₀ (190.147°) is referenced from Earth's equator's ascending
-    // node on the ICRF instead, an unrelated frame — using it here silently
-    // introduced a ~90° phase error (this app's cross-checked, verifiably
-    // correct spin constant for Earth; the other planets' epoch constants
-    // below share the same category of frame mismatch, just unverified).
-    rotationAtEpochDegrees: 280.461,
+    // The real IAU W₀ value — turned out to be correct all along. It was
+    // swapped out for GMST₀ (280.461°) earlier under the theory that W₀'s
+    // ICRF-node reference frame didn't match this app's vernal-equinox-based
+    // world +X. That diagnosis was wrong: the actual bug at the time was the
+    // missing argumentOfPeriapsisDegrees above (perihelion was implicitly
+    // pinned to the ascending node), and GMST₀ only "worked" by coincidentally
+    // absorbing that error. With the real orbit now in place, W₀ checks out
+    // directly against real JPL data — no frame conversion needed after all.
+    rotationAtEpochDegrees: 190.147,
     textures: {
       map: "/textures/earth/map.jpg",
       normalMap: "/textures/earth/normal.png",
@@ -196,6 +215,7 @@ export const PLANETS: PlanetData[] = [
     axialTiltDegrees: 25.19,
     inclinationDegrees: 1.85,
     ascendingNodeDegrees: 49.558,
+    argumentOfPeriapsisDegrees: 286.497,
     meanAnomalyAtEpochDegrees: 19.39,
     rotationAtEpochDegrees: 176.63,
     textures: {
@@ -212,6 +232,7 @@ export const PLANETS: PlanetData[] = [
     axialTiltDegrees: 3.13,
     inclinationDegrees: 1.303,
     ascendingNodeDegrees: 100.464,
+    argumentOfPeriapsisDegrees: 274.255,
     meanAnomalyAtEpochDegrees: 19.668,
     rotationAtEpochDegrees: 284.95,
     textures: {
@@ -228,6 +249,7 @@ export const PLANETS: PlanetData[] = [
     axialTiltDegrees: 26.73,
     inclinationDegrees: 2.485,
     ascendingNodeDegrees: 113.665,
+    argumentOfPeriapsisDegrees: 338.936,
     meanAnomalyAtEpochDegrees: 317.355,
     rotationAtEpochDegrees: 38.9,
     textures: {
@@ -250,6 +272,7 @@ export const PLANETS: PlanetData[] = [
     axialTiltDegrees: 97.77,
     inclinationDegrees: 0.773,
     ascendingNodeDegrees: 74.006,
+    argumentOfPeriapsisDegrees: 96.937,
     meanAnomalyAtEpochDegrees: 142.284,
     rotationAtEpochDegrees: 203.81,
     textures: {
@@ -266,6 +289,7 @@ export const PLANETS: PlanetData[] = [
     axialTiltDegrees: 28.32,
     inclinationDegrees: 1.77,
     ascendingNodeDegrees: 131.784,
+    argumentOfPeriapsisDegrees: 273.181,
     meanAnomalyAtEpochDegrees: 259.915,
     rotationAtEpochDegrees: 253.18,
     textures: {

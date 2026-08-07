@@ -45,17 +45,37 @@ const hoverCursor = {
 // tilts, ascendingNode is which direction (around the vertical axis) it
 // tilts toward. At inclination 0 this reduces to (xOrb, 0, yOrb) — the flat,
 // single-plane orbit every planet used before inclination existed.
+//
+// argumentOfPeriapsis runs first, entirely within the flat plane, before any
+// of that: xOrb/yOrb (from eccentric anomaly) place perihelion at in-plane
+// angle 0 by construction, but real perihelion doesn't generally sit at the
+// ascending node — it's real angular distance away, measured in the
+// direction of motion. Without this rotation, every planet's orbit was
+// implicitly (and wrongly) assumed to have perihelion exactly at its
+// ascending node — for Earth specifically, this is also what fixes the
+// seasons: rotation.y's fixed tilt axis is only edge-on to the sun (an
+// equinox) when Earth's position lines up with world +X, so where world +X
+// actually falls in the orbit (relative to perihelion) directly decides
+// when the seasons happen. Verified against real JPL data across a full
+// year of dates (latitude/season match held within ~0.2° throughout) —
+// see PlanetData.argumentOfPeriapsisDegrees.
 function tiltOrbitalPosition(
   xOrb: number,
   yOrb: number,
+  argumentOfPeriapsis: number,
   inclination: number,
   ascendingNode: number,
 ): [number, number, number] {
+  const cosW = Math.cos(argumentOfPeriapsis);
+  const sinW = Math.sin(argumentOfPeriapsis);
+  const x = xOrb * cosW - yOrb * sinW;
+  const y = xOrb * sinW + yOrb * cosW;
+
   const cosO = Math.cos(ascendingNode);
   const sinO = Math.sin(ascendingNode);
   const cosI = Math.cos(inclination);
   const sinI = Math.sin(inclination);
-  return [xOrb * cosO - yOrb * sinO * cosI, yOrb * sinI, xOrb * sinO + yOrb * cosO * cosI];
+  return [x * cosO - y * sinO * cosI, y * sinI, x * sinO + y * cosO * cosI];
 }
 
 function capitalize(id: string) {
@@ -321,6 +341,7 @@ type PlanetProps = {
   ascendingNodeDegrees?: number;
   meanAnomalyAtEpochDegrees?: number;
   rotationAtEpochDegrees?: number;
+  argumentOfPeriapsisDegrees?: number;
   selected: boolean;
   textures?: PlanetTextures;
   ring?: PlanetRingData;
@@ -341,6 +362,7 @@ function Planet({
   ascendingNodeDegrees = 0,
   meanAnomalyAtEpochDegrees = 0,
   rotationAtEpochDegrees = 0,
+  argumentOfPeriapsisDegrees = 0,
   selected,
   textures,
   ring,
@@ -373,6 +395,7 @@ function Planet({
   const ascendingNodeRadians = (ascendingNodeDegrees * Math.PI) / 180;
   const meanAnomalyAtEpochRadians = (meanAnomalyAtEpochDegrees * Math.PI) / 180;
   const rotationAtEpochRadians = (rotationAtEpochDegrees * Math.PI) / 180;
+  const argumentOfPeriapsisRadians = (argumentOfPeriapsisDegrees * Math.PI) / 180;
   const ringInverseRotation = useMemo(
     () => new Quaternion().setFromEuler(new Euler(Math.PI / 2 + axialTiltRadians, 0, 0)).invert(),
     [axialTiltRadians],
@@ -397,11 +420,19 @@ function Planet({
       return tiltOrbitalPosition(
         semiMajorAxis * (Math.cos(E) - eccentricity),
         semiMinorAxis * Math.sin(E),
+        argumentOfPeriapsisRadians,
         inclinationRadians,
         ascendingNodeRadians,
       );
     });
-  }, [semiMajorAxis, eccentricity, semiMinorAxis, inclinationRadians, ascendingNodeRadians]);
+  }, [
+    semiMajorAxis,
+    eccentricity,
+    semiMinorAxis,
+    argumentOfPeriapsisRadians,
+    inclinationRadians,
+    ascendingNodeRadians,
+  ]);
 
   // Apply axial tilt once on mount/update without making the mesh a
   // controlled prop; mutating rotation in useFrame must not be clobbered by
@@ -442,6 +473,7 @@ function Planet({
       ...tiltOrbitalPosition(
         semiMajorAxis * (Math.cos(eccentricAnomaly) - eccentricity),
         semiMinorAxis * Math.sin(eccentricAnomaly),
+        argumentOfPeriapsisRadians,
         inclinationRadians,
         ascendingNodeRadians,
       ),
@@ -740,6 +772,7 @@ export function Scene({
           ascendingNodeDegrees={planet.ascendingNodeDegrees}
           meanAnomalyAtEpochDegrees={planet.meanAnomalyAtEpochDegrees}
           rotationAtEpochDegrees={planet.rotationAtEpochDegrees}
+          argumentOfPeriapsisDegrees={planet.argumentOfPeriapsisDegrees}
           selected={selectedId === planet.id}
           textures={planet.textures}
           ring={planet.ring}
