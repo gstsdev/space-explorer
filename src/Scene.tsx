@@ -2,11 +2,14 @@ import { Suspense, useEffect, useMemo, useRef } from "react";
 import type { RefObject } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Billboard, Html, Line, useTexture } from "@react-three/drei";
-import { AdditiveBlending, BufferAttribute, DoubleSide, Euler, MathUtils, Quaternion, RingGeometry, ShaderMaterial, SRGBColorSpace, Vector3, RepeatWrapping, ClampToEdgeWrapping } from "three";
+import { AdditiveBlending, BackSide, BufferAttribute, Color, DoubleSide, Euler, MathUtils, Quaternion, RingGeometry, ShaderMaterial, SRGBColorSpace, Vector3, RepeatWrapping, ClampToEdgeWrapping } from "three";
 import type { Group, Mesh, Object3D } from "three";
 import type { ThreeEvent } from "@react-three/fiber";
 import {
   ANGULAR_THRESHOLD,
+  ATMOSPHERE_HEIGHT_EXAGGERATION,
+  ATMOSPHERE_MAX_INTENSITY,
+  ATMOSPHERE_MIN_INTENSITY,
   GM_SUN_SCALED,
   KM_TO_UNITS,
   MIN_VIEW_MULTIPLIER,
@@ -16,7 +19,7 @@ import {
   SUN_RADIUS,
   VIEW_MULTIPLIER,
 } from "./astronomy";
-import type { PlanetRingData, PlanetTextures } from "./astronomy";
+import type { PlanetAtmosphereData, PlanetRingData, PlanetTextures } from "./astronomy";
 import { simulation } from "./simulation";
 import { FRAME_PRIORITY } from "./framePriority";
 
@@ -142,6 +145,48 @@ function polePositionWorld(poleRaDegrees: number, poleDecDegrees: number): Vecto
 
 const NORTH_POLE_AXIS = new Vector3(0, 1, 0);
 
+// Shared by the atmosphere shell (Atmosphere) and the surface rim glow
+// (TexturedSurface) so both derive "how strong does this planet's glow
+// read" from the same real relativeSurfacePressure value — see
+// PlanetAtmosphereData.relativeSurfacePressure's comment for why sqrt+clamp
+// rather than the raw ratio.
+function atmosphereIntensity(relativeSurfacePressure: number): number {
+  return MathUtils.clamp(Math.sqrt(relativeSurfacePressure), ATMOSPHERE_MIN_INTENSITY, ATMOSPHERE_MAX_INTENSITY);
+}
+
+// TexturedSurface's surface reinforcement term only (see
+// ATMOSPHERE_RIM_FADE_WIDTH below for the Atmosphere shell's own,
+// differently-shaped version of this problem). A raw Fresnel term
+// (1 - |dot(N,V)|) doesn't stay confined to a thin band at the camera
+// distances this app actually uses: at MIN_VIEW_MULTIPLIER (3 body-radii
+// from center, the closest the camera gets), the visible cap spans ~70° from
+// the sub-camera point, and that Fresnel term rises well above zero starting
+// around 40-50° in — over half the visible disk, not just its edge, would
+// read as "glowing" with only an exponent to hold it back. This surface term
+// isn't occlusion-limited the way the shell is (it's painted directly on the
+// ground material, visible wherever the ground itself is), so it needs its
+// own hard, camera-distance-independent guarantee: smoothstep(inner, 1.0, ·)
+// gives zero glow until the grazing angle is at least this close to the true
+// silhouette (1.0).
+const ATMOSPHERE_RIM_INNER = 0.85;
+
+// The Atmosphere shell only. The shell is only ever visible in the thin
+// annulus where it isn't occluded by the opaque ground beneath it (see the
+// shell's own doc comment) — within that annulus, the raw Fresnel term
+// increases monotonically from "close to the ground" up to 1.0 exactly at
+// the shell's own outer edge (the true tangent silhouette, right at the
+// border with empty space). Fading brightness *up* with that raw value
+// therefore reads as glowing toward space and fading out into the ground —
+// backwards from real reference photos (bright, saturated blue right where
+// the atmosphere touches the visible ground/clouds, fading smoothly outward
+// into black). This constant instead measures distance *from* that outer
+// edge (0 = the true silhouette, growing toward the ground) and ramps
+// brightness up over that small range, so the glow is brightest hugging the
+// ground and fades to nothing right at the true edge — anchored to the
+// shell's own geometric edge rather than a fixed threshold, so it holds up
+// at any camera distance without separate tuning.
+const ATMOSPHERE_RIM_FADE_WIDTH = 0.15;
+
 function capitalize(id: string) {
   return id[0].toUpperCase() + id.slice(1);
 }
@@ -187,12 +232,33 @@ type OnFocus = (target: Object3D, id: string) => void;
 // same rotation this mesh already applies to itself, no camera/world-matrix
 // timing to get wrong), then adding the night texture as emissive light
 // wherever that surface point faces away from the sun.
+//
+// atmosphere (optional) adds a second, independent effect through the same
+// onBeforeCompile patch: a faint rim glow at the mesh's own silhouette,
+// coupling the external Atmosphere shell's glow down onto the surface it's
+// wrapping (real limb brightening lights the edge of the daylit ground
+// itself, not just the air above it). Unlike the day/night split above,
+// the rim term needs a view-dependent grazing angle, so it reuses Phong's
+// own built-in vNormal/vViewPosition varyings (already view-space, already
+// correct for this mesh's live rotation via the standard normalMatrix/
+// modelViewMatrix three.js recomputes every frame) rather than the
+// object-space vObjectNormal/sunDirection pair above — no camera matrix
+// exists in that object-space pair to project a view angle through.
+//
+// Deliberately dimmer than the Atmosphere shell's own glow (see
+// atmosphereIntensity) — the shell already carries the limb glow on its
+// own, so this is a subtle reinforcement where the two overlap at the
+// silhouette, not a second full-strength copy of it.
+const SURFACE_GLOW_FACTOR = 0.4;
+
 function TexturedSurface({
   textures,
   sunDirection,
+  atmosphere,
 }: {
   textures: PlanetTextures;
   sunDirection: RefObject<Vector3>;
+  atmosphere?: PlanetAtmosphereData;
 }) {
   const maps = useTexture(textures);
   const mapsRef = useRef(maps);
@@ -229,9 +295,8 @@ function TexturedSurface({
       specular="#333333"
       shininess={15}
       onBeforeCompile={(shader) => {
-        if (!maps.nightMap) return;
+        if (!maps.nightMap && !atmosphere) return;
 
-        shader.uniforms.nightMap = { value: maps.nightMap };
         shader.uniforms.sunDirection = { value: new Vector3(0, 0, 1) };
         shaderUniforms.current = shader.uniforms as unknown as { sunDirection: { value: Vector3 } };
 
@@ -239,17 +304,46 @@ function TexturedSurface({
           .replace("#include <common>", "#include <common>\nvarying vec3 vObjectNormal;")
           .replace("#include <beginnormal_vertex>", "#include <beginnormal_vertex>\nvObjectNormal = objectNormal;");
 
-        shader.fragmentShader = shader.fragmentShader
-          .replace(
-            "#include <common>",
-            "#include <common>\nvarying vec3 vObjectNormal;\nuniform sampler2D nightMap;\nuniform vec3 sunDirection;",
-          )
-          .replace(
-            "#include <emissivemap_fragment>",
-            `#include <emissivemap_fragment>
+        let uniformDeclarations = "#include <common>\nvarying vec3 vObjectNormal;\nuniform vec3 sunDirection;";
+        let emissiveAdditions = "#include <emissivemap_fragment>";
+
+        if (maps.nightMap) {
+          shader.uniforms.nightMap = { value: maps.nightMap };
+          uniformDeclarations += "\nuniform sampler2D nightMap;";
+          emissiveAdditions += `
             float dayFactor = smoothstep(-0.15, 0.15, dot(normalize(vObjectNormal), normalize(sunDirection)));
-            totalEmissiveRadiance += texture2D(nightMap, vMapUv).rgb * (1.0 - dayFactor);`,
-          );
+            totalEmissiveRadiance += texture2D(nightMap, vMapUv).rgb * (1.0 - dayFactor);`;
+        }
+
+        if (atmosphere) {
+          shader.uniforms.atmosphereColor = { value: new Color(atmosphere.color) };
+          shader.uniforms.atmosphereIntensity = {
+            value: atmosphereIntensity(atmosphere.relativeSurfacePressure) * SURFACE_GLOW_FACTOR,
+          };
+          uniformDeclarations += "\nuniform vec3 atmosphereColor;\nuniform float atmosphereIntensity;";
+          // vNormal/vViewPosition are Phong's own built-in varyings (declared
+          // by normal_pars_fragment/lights_phong_pars_fragment, already in
+          // scope by this point in the template) — see this component's own
+          // doc comment for why the rim term uses these instead of the
+          // object-space pair above.
+          emissiveAdditions += `
+            // Tight terminator band, not a broad half-lambert: this term
+            // stands in for light bouncing near the ground itself, which
+            // needs actual local daylight — unlike the Atmosphere shell
+            // (upper-air sunlight can still reach past local sunset), there's
+            // no physical case for the ground-level reinforcement to still
+            // read on the night side, so it should be fully off through
+            // virtually the whole night hemisphere, not just at the single
+            // antisolar point a plain *0.5+0.5 remap would floor to 0 at.
+            float atmosphereDayFactor = smoothstep(-0.15, 0.15, dot(normalize(vObjectNormal), normalize(sunDirection)));
+            float atmosphereRimBase = 1.0 - abs(dot(normalize(vNormal), normalize(vViewPosition)));
+            float atmosphereRim = smoothstep(${ATMOSPHERE_RIM_INNER}, 1.0, atmosphereRimBase);
+            totalEmissiveRadiance += atmosphereColor * atmosphereRim * atmosphereDayFactor * atmosphereIntensity;`;
+        }
+
+        shader.fragmentShader = shader.fragmentShader
+          .replace("#include <common>", uniformDeclarations)
+          .replace("#include <emissivemap_fragment>", emissiveAdditions);
       }}
     />
   );
@@ -393,10 +487,103 @@ function PlanetRing({
   );
 }
 
+// A thin glowing shell just outside the planet's real surface, standing in
+// for atmospheric limb glow — real Rayleigh/aerosol scattering would need a
+// raymarched volumetric shader, so this is a stylized Fresnel rim glow
+// instead: brightest at the silhouette edge (grazing view angle) and on the
+// sunlit side, dim on the night side, same as real limb photos show at a
+// glance. BackSide + additive blending is the standard trick for this: front
+// faces are culled so the shell never occludes the planet mesh underneath,
+// while the far (inside) faces we do render still carry the same
+// grazing-angle Fresnel term at the visible silhouette.
+//
+// The vertex shader treats object space as world space for both the normal
+// and the sun-direction dot product below — valid here because this mesh has
+// no rotation of its own and its parent group only ever translates (see
+// localSunDirection's comment on Planet), so object-space directions already
+// equal world-space ones.
+function Atmosphere({
+  atmosphere,
+  radius,
+  radiusKm,
+  sunDirection,
+}: {
+  atmosphere: PlanetAtmosphereData;
+  radius: number;
+  radiusKm: number;
+  sunDirection: RefObject<Vector3>;
+}) {
+  const material = useRef<ShaderMaterial>(null);
+  const outerRadius = radius * (1 + (atmosphere.scaleHeightKm * ATMOSPHERE_HEIGHT_EXAGGERATION) / radiusKm);
+  const intensity = atmosphereIntensity(atmosphere.relativeSurfacePressure);
+  const glowColor = useMemo(() => new Color(atmosphere.color), [atmosphere.color]);
+
+  useFrame(() => {
+    if (material.current) material.current.uniforms.sunDirection.value.copy(sunDirection.current);
+  }, FRAME_PRIORITY.updateVisibility);
+
+  return (
+    <mesh>
+      <sphereGeometry args={[outerRadius, 100, 100]} />
+      <shaderMaterial
+        ref={material}
+        transparent
+        depthWrite={false}
+        side={BackSide}
+        blending={AdditiveBlending}
+        uniforms={{
+          sunDirection: { value: new Vector3(0, 0, 1) },
+          glowColor: { value: glowColor },
+          intensity: { value: intensity },
+        }}
+        vertexShader={`
+          varying vec3 vNormal;
+          varying vec3 vWorldPosition;
+          void main() {
+            vNormal = normalize(normal);
+            vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+            vWorldPosition = worldPosition.xyz;
+            gl_Position = projectionMatrix * viewMatrix * worldPosition;
+          }
+        `}
+        fragmentShader={`
+          varying vec3 vNormal;
+          varying vec3 vWorldPosition;
+          uniform vec3 sunDirection;
+          uniform vec3 glowColor;
+          uniform float intensity;
+          void main() {
+            vec3 viewDir = normalize(cameraPosition - vWorldPosition);
+            float rimBase = 1.0 - abs(dot(vNormal, viewDir));
+            // Distance from the shell's own true silhouette (0 there,
+            // growing toward the ground) — see ATMOSPHERE_RIM_FADE_WIDTH's
+            // comment for why this, and not rimBase directly, is what
+            // brightness ramps against: this way the glow is brightest
+            // hugging the ground and fades out into space, not the reverse.
+            float edgeFade = 1.0 - rimBase;
+            float rim = smoothstep(0.0, ${ATMOSPHERE_RIM_FADE_WIDTH}, edgeFade);
+            // Unlike TexturedSurface's ground-level reinforcement term, this
+            // shell keeps a floor on its night side rather than fading to
+            // black: it's real upper-atmosphere air, and upper-atmosphere air
+            // keeps catching direct sunlight at a grazing angle well after
+            // local sunset at the ground below it (the same reason twilight
+            // exists at all) — so a fully dark night limb here would be the
+            // less realistic choice, not the more realistic one.
+            float sunFactor = clamp(dot(vNormal, normalize(sunDirection)) * 0.5 + 0.5, 0.3, 1.0);
+            float glow = rim * sunFactor * intensity;
+            gl_FragColor = vec4(glowColor, glow);
+          }
+        `}
+      />
+    </mesh>
+  );
+}
+
 type PlanetProps = {
   id: string;
   color: string;
   radius: number; // true-scale radius, in scene units
+  radiusKm: number;
   semiMajorAxis: number; // true-scale orbit size, in scene units
   eccentricity: number; // 0 = circle, closer to 1 = more stretched-out ellipse
   rotationPeriodDays?: number;
@@ -410,6 +597,7 @@ type PlanetProps = {
   selected: boolean;
   textures?: PlanetTextures;
   ring?: PlanetRingData;
+  atmosphere?: PlanetAtmosphereData;
   showOrbit: boolean;
   showPlaceholder: boolean;
   onFocus: OnFocus;
@@ -419,6 +607,7 @@ function Planet({
   id,
   color,
   radius,
+  radiusKm,
   semiMajorAxis,
   eccentricity,
   rotationPeriodDays = 1,
@@ -432,6 +621,7 @@ function Planet({
   selected,
   textures,
   ring,
+  atmosphere,
   showOrbit,
   showPlaceholder,
   onFocus,
@@ -654,7 +844,7 @@ function Planet({
           <sphereGeometry args={[radius, 100, 100]} />
           {textures ? (
             <Suspense fallback={<meshStandardMaterial color={color} roughness={0.7} metalness={0.1} />}>
-              <TexturedSurface textures={textures} sunDirection={sunDirection} />
+              <TexturedSurface textures={textures} sunDirection={sunDirection} atmosphere={atmosphere} />
             </Suspense>
           ) : (
             <meshStandardMaterial color={color} roughness={0.7} metalness={0.1} />
@@ -676,6 +866,14 @@ function Planet({
             ringQuaternion={ringQuaternion}
             radius={radius}
             sunDirection={ringSunDirection}
+          />
+        ) : null}
+        {atmosphere ? (
+          <Atmosphere
+            atmosphere={atmosphere}
+            radius={radius}
+            radiusKm={radiusKm}
+            sunDirection={localSunDirection}
           />
         ) : null}
         <BodyLabel id={id} selected={selected} />
@@ -849,6 +1047,7 @@ export function Scene({
           id={planet.id}
           color={planet.color}
           radius={planet.radiusKm * KM_TO_UNITS}
+          radiusKm={planet.radiusKm}
           semiMajorAxis={planet.semiMajorAxisKm * KM_TO_UNITS}
           eccentricity={planet.eccentricity}
           rotationPeriodDays={planet.rotationPeriodDays}
@@ -862,6 +1061,7 @@ export function Scene({
           selected={selectedId === planet.id}
           textures={planet.textures}
           ring={planet.ring}
+          atmosphere={planet.atmosphere}
           showOrbit={showOrbits}
           showPlaceholder={showPlaceholders}
           onFocus={onFocus}

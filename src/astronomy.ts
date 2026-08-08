@@ -87,6 +87,26 @@ export type PlanetRingData = {
   opacity?: number;
 };
 
+export type PlanetAtmosphereData = {
+  // Real Rayleigh/aerosol scattering color as seen in real limb photos —
+  // independent of the two values below, which shape the glow rather than
+  // color it (Earth's blue, Venus's pale yellow haze, Mars's dusty tan).
+  color: string;
+  // Real atmospheric scale height in km (how fast pressure/density falls
+  // off with altitude). Every value here is under 0.3% of its own planet's
+  // radius — true scale that's sub-pixel and invisible, so Scene.tsx
+  // exaggerates it (ATMOSPHERE_HEIGHT_EXAGGERATION) for the rendered glow
+  // shell's thickness, the same problem placeholders solve for whole-planet
+  // visibility at a distance.
+  scaleHeightKm: number;
+  // Real surface pressure relative to Earth's 101.325 kPa (Earth = 1) —
+  // drives the glow's intensity in Scene.tsx. Applied there via sqrt and
+  // clamped (ATMOSPHERE_MIN_INTENSITY/MAX_INTENSITY): Venus's real 92x
+  // would otherwise blow the glow out to solid white, and Mars's real
+  // 0.0063x would otherwise be indistinguishable from nothing.
+  relativeSurfacePressure: number;
+};
+
 export type PlanetData = {
   id: string;
   color: string;
@@ -161,7 +181,16 @@ export type PlanetData = {
   rotationAtEpochDegrees?: number;
   textures?: PlanetTextures;
   ring?: PlanetRingData;
+  atmosphere?: PlanetAtmosphereData;
 };
+
+// See PlanetAtmosphereData.scaleHeightKm's comment for why this exists.
+export const ATMOSPHERE_HEIGHT_EXAGGERATION = 12;
+
+// See PlanetAtmosphereData.relativeSurfacePressure's comment for why this
+// range (rather than the raw pressure ratio) drives glow intensity.
+export const ATMOSPHERE_MIN_INTENSITY = 0.35;
+export const ATMOSPHERE_MAX_INTENSITY = 1.5;
 
 export const SUN_DATA = {
   id: "sun",
@@ -225,6 +254,14 @@ export const PLANETS: PlanetData[] = [
     textures: {
       map: "/textures/venus/map.jpg",
     },
+    // Real: dense CO2 atmosphere under a global sulfuric-acid haze, ~92x
+    // Earth's surface pressure — the thickest, brightest glow of the three
+    // atmospheres modeled here.
+    atmosphere: {
+      color: "#e8d3a0",
+      scaleHeightKm: 15.9,
+      relativeSurfacePressure: 92,
+    },
   },
   {
     id: "earth",
@@ -256,6 +293,13 @@ export const PLANETS: PlanetData[] = [
       specularMap: "/textures/earth/specular.png",
       nightMap: "/textures/earth/nightmap.jpg",
     },
+    // Real: nitrogen/oxygen atmosphere at 1 standard atmosphere — the
+    // reference point relativeSurfacePressure is scaled against.
+    atmosphere: {
+      color: "#7ec8ff",
+      scaleHeightKm: 8.5,
+      relativeSurfacePressure: 1,
+    },
   },
   {
     id: "mars",
@@ -276,6 +320,14 @@ export const PLANETS: PlanetData[] = [
     rotationAtEpochDegrees: 126.657,
     textures: {
       map: "/textures/mars/map.jpg",
+    },
+    // Real: thin CO2 atmosphere, ~0.63% of Earth's surface pressure — the
+    // faintest of the three glows modeled here (clamped up to
+    // ATMOSPHERE_MIN_INTENSITY so it's still visible rather than nothing).
+    atmosphere: {
+      color: "#d99a6c",
+      scaleHeightKm: 11.1,
+      relativeSurfacePressure: 0.0063,
     },
   },
   {
