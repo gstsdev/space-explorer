@@ -690,6 +690,7 @@ type PlanetProps = {
   atmosphere?: PlanetAtmosphereData;
   showOrbit: boolean;
   showPlaceholder: boolean;
+  showLabel: boolean;
   onFocus: OnFocus;
 };
 
@@ -714,6 +715,7 @@ function Planet({
   atmosphere,
   showOrbit,
   showPlaceholder,
+  showLabel,
   onFocus,
 }: PlanetProps) {
   const group = useRef<Group>(null);
@@ -966,7 +968,7 @@ function Planet({
             sunDirection={localSunDirection}
           />
         ) : null}
-        <BodyLabel id={id} selected={selected} />
+        {showLabel ? <BodyLabel id={id} selected={selected} /> : null}
       </group>
     </>
   );
@@ -1035,10 +1037,12 @@ function SunGlare() {
 function Sun({
   selected,
   showPlaceholder,
+  showLabel,
   onFocus,
 }: {
   selected: boolean;
   showPlaceholder: boolean;
+  showLabel: boolean;
   onFocus: OnFocus;
 }) {
   const group = useRef<Group>(null);
@@ -1112,7 +1116,7 @@ function Sun({
           <meshBasicMaterial color="#ffffff" depthTest={false} transparent opacity={0.9} />
         </mesh>
       </Billboard>
-      <BodyLabel id={SUN_DATA.id} selected={selected} />
+      {showLabel ? <BodyLabel id={SUN_DATA.id} selected={selected} /> : null}
     </group>
   );
 }
@@ -1121,16 +1125,23 @@ export function Scene({
   selectedId,
   showOrbits,
   showPlaceholders,
+  showLabels,
   onFocus,
 }: {
   selectedId: string | null;
   showOrbits: boolean;
   showPlaceholders: boolean;
+  showLabels: boolean;
   onFocus: OnFocus;
 }) {
   return (
     <>
-      <Sun selected={selectedId === SUN_DATA.id} showPlaceholder={showPlaceholders} onFocus={onFocus} />
+      <Sun
+        selected={selectedId === SUN_DATA.id}
+        showPlaceholder={showPlaceholders}
+        showLabel={showLabels}
+        onFocus={onFocus}
+      />
       {PLANETS.map((planet) => (
         <Planet
           key={planet.id}
@@ -1154,6 +1165,7 @@ export function Scene({
           atmosphere={planet.atmosphere}
           showOrbit={showOrbits}
           showPlaceholder={showPlaceholders}
+          showLabel={showLabels}
           onFocus={onFocus}
         />
       ))}

@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import { Orbit, CircleDot } from "lucide-react";
+import { Orbit, CircleDot, Camera } from "lucide-react";
 
 const buttonBaseStyle: CSSProperties = {
   display: "flex",
@@ -46,11 +46,13 @@ export function ViewControls({
   onToggleOrbits,
   showPlaceholders,
   onTogglePlaceholders,
+  onEnterPictureMode,
 }: {
   showOrbits: boolean;
   onToggleOrbits: () => void;
   showPlaceholders: boolean;
   onTogglePlaceholders: () => void;
+  onEnterPictureMode: () => void;
 }) {
   return (
     <div
@@ -71,6 +73,9 @@ export function ViewControls({
       </ToggleButton>
       <ToggleButton active={showPlaceholders} label="Toggle planet indicators" onClick={onTogglePlaceholders}>
         <CircleDot size={18} strokeWidth={2} />
+      </ToggleButton>
+      <ToggleButton active label="Picture mode (Esc to exit)" onClick={onEnterPictureMode}>
+        <Camera size={18} strokeWidth={2} />
       </ToggleButton>
     </div>
   );

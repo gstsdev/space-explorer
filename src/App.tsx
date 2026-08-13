@@ -1,4 +1,4 @@
-import { Suspense, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import type { Object3D } from "three";
 import { Scene } from "./Scene";
@@ -19,6 +19,16 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(SUN_DATA.id);
   const [showOrbits, setShowOrbits] = useState(true);
   const [showPlaceholders, setShowPlaceholders] = useState(true);
+  const [pictureMode, setPictureMode] = useState(false);
+
+  useEffect(() => {
+    if (!pictureMode) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPictureMode(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [pictureMode]);
 
   return (
     <>
@@ -37,8 +47,9 @@ export default function App() {
         </Suspense>
         <Scene
           selectedId={selectedId}
-          showOrbits={showOrbits}
-          showPlaceholders={showPlaceholders}
+          showOrbits={showOrbits && !pictureMode}
+          showPlaceholders={showPlaceholders && !pictureMode}
+          showLabels={!pictureMode}
           onFocus={(object, id) => {
             focusTarget.current = object;
             setSelectedId(id);
@@ -47,14 +58,19 @@ export default function App() {
         <CameraRig focusTarget={focusTarget} />
         <SimulationClock />
       </Canvas>
-      <SpeedControl />
-      <StatsPanel selectedId={selectedId} />
-      <ViewControls
-        showOrbits={showOrbits}
-        onToggleOrbits={() => setShowOrbits((value) => !value)}
-        showPlaceholders={showPlaceholders}
-        onTogglePlaceholders={() => setShowPlaceholders((value) => !value)}
-      />
+      {!pictureMode && (
+        <>
+          <SpeedControl />
+          <StatsPanel selectedId={selectedId} />
+          <ViewControls
+            showOrbits={showOrbits}
+            onToggleOrbits={() => setShowOrbits((value) => !value)}
+            showPlaceholders={showPlaceholders}
+            onTogglePlaceholders={() => setShowPlaceholders((value) => !value)}
+            onEnterPictureMode={() => setPictureMode(true)}
+          />
+        </>
+      )}
     </>
   );
 }
