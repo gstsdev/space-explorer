@@ -157,10 +157,12 @@ function atmosphereIntensity(relativeSurfacePressure: number): number {
 // Shared day/night law for both atmosphere rim shaders (Atmosphere's shell
 // and TexturedSurface's surface reinforcement): fully lit whenever the sun
 // is above the local horizon (angle between the light ray and the surface
-// normal <= 90°, i.e. dot(N, sunDir) >= 0), fading to fully transparent by
-// 5° past that. A sharp cutoff right at the horizon, not a broad half-lambert
-// or a floored one — replaces this file's earlier, separate day/night
-// treatments for the two rim terms.
+// normal <= 90°, i.e. dot(N, sunDir) >= 0), reaching its night-side state by
+// 5° past that. A sharp cutoff right at the horizon, not a broad
+// half-lambert — replaces this file's earlier, separate day/night
+// treatments for the two rim terms. TexturedSurface's night-side state is
+// fully transparent (see untintedGlsl in Atmosphere for the shell's own,
+// non-transparent night state when it has no tuned nightColor).
 const ATMOSPHERE_TERMINATOR_FADE_DOT = Math.cos((95 * Math.PI) / 180); // dot(N, sunDir) at 5° past the terminator, ≈ -0.0872
 
 // The Atmosphere shell's tinted color transitions only (see tintedGlsl in
@@ -174,6 +176,16 @@ const ATMOSPHERE_TWILIGHT_END_DOT = Math.cos((90 * Math.PI) / 180); // dot(N, su
 // rather than the wide gap a symmetric ±width around ATMOSPHERE_TERMINATOR_FADE_DOT
 // used to leave.
 const ATMOSPHERE_NIGHT_START_DOT = Math.cos((91 * Math.PI) / 180); // dot(N, sunDir) at 92°, ≈ -0.0349
+
+// Atmosphere's untinted branch only (no PlanetAtmosphereData.nightColor —
+// see untintedGlsl): rather than fading to transparent on the night side,
+// the glow settles at this fraction of the planet's own atmosphere color,
+// full brightness (alpha) throughout — so it still reads as "the same
+// atmosphere, dimmer," not a fade to nothing.
+// 0-1 range: 0 fades the night side to a black (but still opaque) rim; 1
+// removes the day/night difference entirely (full color all the way
+// around); values above ~0.5 start reading as barely any dimming at all.
+const ATMOSPHERE_UNTINTED_NIGHT_DARKEN = 0.2;
 
 // TexturedSurface's surface reinforcement term only (see
 // ATMOSPHERE_RIM_FADE_WIDTH below for the Atmosphere shell's own,
@@ -582,13 +594,17 @@ function Atmosphere({
     gl_FragColor = vec4(finalColor, glow);
   `;
 
-  // Without a tuned color (see PlanetAtmosphereData): plain single-color
-  // glow, lit whenever the sun is above the local horizon and fading to
-  // fully transparent by 5° past it — see ATMOSPHERE_TERMINATOR_FADE_DOT.
+  // Without a tuned color (see PlanetAtmosphereData): the planet's own
+  // atmosphere color, easing down to ATMOSPHERE_UNTINTED_NIGHT_DARKEN of
+  // itself by 5° past the local horizon rather than fading to transparent
+  // — see ATMOSPHERE_TERMINATOR_FADE_DOT. Alpha stays at full strength
+  // throughout; only the color darkens, so the shell reads as "the same
+  // atmosphere, dimmer at night," not a fade to nothing.
   const untintedGlsl = `
-    float sunFactor = smoothstep(${ATMOSPHERE_TERMINATOR_FADE_DOT}, 0.0, dot(vNormal, normalize(sunDirection)));
-    float glow = rim * sunFactor * intensity;
-    gl_FragColor = vec4(glowColor, glow);
+    float daylight = smoothstep(${ATMOSPHERE_TERMINATOR_FADE_DOT}, 0.0, dot(vNormal, normalize(sunDirection)));
+    vec3 finalColor = mix(glowColor * ${ATMOSPHERE_UNTINTED_NIGHT_DARKEN}, glowColor, daylight);
+    float glow = rim * intensity;
+    gl_FragColor = vec4(finalColor, glow);
   `;
 
   return (
