@@ -587,18 +587,26 @@ function Atmosphere({
     float rim = smoothstep(0.0, ${ATMOSPHERE_RIM_FADE_WIDTH}, edgeFade);
   `;
 
-  // With a tuned twilight/night color (see PlanetAtmosphereData), the shell
-  // shifts hue across three bands instead of just fading to black: the
-  // planet's own atmosphere color, easing (smoothstep's own cubic
-  // ease-in/ease-out) into its twilightColor over the wide 80-90° band
-  // (ATMOSPHERE_TWILIGHT_START_DOT/END_DOT), holding that color over a
-  // short 90-92° plateau, then easing into its nightColor (with a dimmed,
-  // not zeroed, brightness) over the 92-95° band (ATMOSPHERE_NIGHT_START_DOT
-  // to ATMOSPHERE_TERMINATOR_FADE_DOT).
+  // With a tuned twilight/night color (see PlanetAtmosphereData): real
+  // limb photos taken near the terminator (see this component's own doc
+  // comment) show the twilight color as a gradient *by altitude* — orange
+  // right where the atmosphere touches the ground, easing to the planet's
+  // normal blue toward space — not a flat wash across the whole limb. So
+  // twilightColor is blended in radially here, reusing the same `rim`
+  // shape already driving brightness (1 at the ground-hugging inner edge,
+  // 0 at the outer/space edge) — and *that* radial gradient is what fades
+  // in/out with the ground's own day/night angle (towardTwilight), rather
+  // than the angle picking the color directly. Ground still fully in
+  // daylight shows plain glowColor (towardTwilight = 0, so the radial
+  // gradient's own orange component never gets mixed in); past 92-95°,
+  // the same angle-based fade continues on into nightColor as before,
+  // uniformly (not radially — real deep-shadow limb photos aren't part of
+  // what this was checked against).
   const tintedGlsl = `
     float dayDot = dot(vNormal, normalize(sunDirection));
+    vec3 radialTwilightColor = mix(glowColor, twilightColor, rim);
     float towardTwilight = 1.0 - smoothstep(${ATMOSPHERE_TWILIGHT_END_DOT}, ${ATMOSPHERE_TWILIGHT_START_DOT}, dayDot);
-    vec3 dayOrTwilightColor = mix(glowColor, twilightColor, towardTwilight);
+    vec3 dayOrTwilightColor = mix(glowColor, radialTwilightColor, towardTwilight);
     float towardNight = 1.0 - smoothstep(${ATMOSPHERE_TERMINATOR_FADE_DOT}, ${ATMOSPHERE_NIGHT_START_DOT}, dayDot);
     vec3 finalColor = mix(dayOrTwilightColor, nightColor, towardNight);
     float sunFactor = mix(1.0, 0.3, towardNight);
