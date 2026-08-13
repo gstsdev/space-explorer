@@ -177,6 +177,22 @@ const ATMOSPHERE_TWILIGHT_END_DOT = Math.cos((90.25 * Math.PI) / 180); // dot(N,
 // used to leave.
 const ATMOSPHERE_NIGHT_START_DOT = Math.cos((90.75 * Math.PI) / 180); // dot(N, sunDir) at 92°, ≈ -0.0349
 
+// The Atmosphere shell's tinted branch only — suppresses the twilight
+// tinting above when the CAMERA itself is roughly opposite the sun (looking
+// at Earth's whole night hemisphere at once), not just any one point's own
+// local terminator distance. From that viewing angle the visible limb sits
+// almost entirely *on* the terminator simultaneously (every point along it
+// is having its own sunset at once — the same geometry behind a "blood
+// moon"), so without this, the *entire* ring lights up twilight-orange
+// instead of the vivid blue a normal night-side view should show. Only
+// the twilight tint is suppressed, not the separate night-side dimming/
+// graying — that part still looks realistic even in this view. Compared
+// against dot(camera-from-planet direction, sun-from-planet direction):
+// -1 is exact anti-solar (full suppression, forced back to plain
+// glowColor), this threshold is where suppression starts easing off back
+// to the normal local per-point behavior.
+const ATMOSPHERE_ANTI_SOLAR_SUPPRESSION_DOT = -0.7;
+
 // Atmosphere's untinted branch only (no PlanetAtmosphereData.nightColor —
 // see untintedGlsl): rather than fading to transparent on the night side,
 // the glow settles at this fraction of the planet's own atmosphere color,
@@ -554,6 +570,7 @@ function Atmosphere({
   sunDirection: RefObject<Vector3>;
 }) {
   const material = useRef<ShaderMaterial>(null);
+  const mesh = useRef<Mesh>(null);
   const outerRadius = radius * (1 + (atmosphere.scaleHeightKm * ATMOSPHERE_HEIGHT_EXAGGERATION) / radiusKm);
   const intensity = atmosphereIntensity(atmosphere.relativeSurfacePressure);
   const glowColor = useMemo(() => new Color(atmosphere.color), [atmosphere.color]);
@@ -570,9 +587,28 @@ function Atmosphere({
     [atmosphere.nightColor],
   );
   const hasTint = Boolean(twilightColor && nightColor);
+  // Scratch object for the anti-solar suppression computed below — see
+  // ATMOSPHERE_ANTI_SOLAR_SUPPRESSION_DOT — kept as a ref so it doesn't
+  // allocate every frame.
+  const toCamera = useRef(new Vector3());
 
-  useFrame(() => {
-    if (material.current) material.current.uniforms.sunDirection.value.copy(sunDirection.current);
+  useFrame((state) => {
+    if (!material.current) return;
+    material.current.uniforms.sunDirection.value.copy(sunDirection.current);
+
+    if (hasTint && mesh.current?.parent) {
+      // mesh.parent is Planet's own group, whose .position is the planet's
+      // world position (the group only ever translates — see this
+      // component's own doc comment). Deliberately not
+      // mesh.getWorldPosition()/matrixWorld here: matrixWorld is only
+      // refreshed by the renderer's own pass, which runs after every
+      // useFrame callback this frame, so it'd still read last frame's
+      // position — group.position is instead updated synchronously by
+      // Planet's own earlier-priority (updatePosition) useFrame, so this
+      // reads the current frame's fresh value.
+      toCamera.current.copy(state.camera.position).sub(mesh.current.parent.position).normalize();
+      material.current.uniforms.antiSolarFactor.value = toCamera.current.dot(sunDirection.current);
+    }
   }, FRAME_PRIORITY.updateVisibility);
 
   // Shared by both branches below: rim is the distance from the shell's own
@@ -602,12 +638,23 @@ function Atmosphere({
   // the same angle-based fade continues on into nightColor as before,
   // uniformly (not radially — real deep-shadow limb photos aren't part of
   // what this was checked against).
+  //
+  // antiSolarFactor (see its own comment on
+  // ATMOSPHERE_ANTI_SOLAR_SUPPRESSION_DOT) then suppresses towardTwilight
+  // specifically back toward 0 as the camera approaches exact anti-solar
+  // alignment, so a whole-limb "ring of simultaneous sunsets" renders as
+  // plain glowColor rather than a solid twilight-orange ring. towardNight
+  // is deliberately left alone: each point's own dimming/graying toward
+  // nightColor still applies normally even in that view, since unlike the
+  // orange tint, that part still reads as realistic.
   const tintedGlsl = `
     float dayDot = dot(vNormal, normalize(sunDirection));
     vec3 radialTwilightColor = mix(glowColor, twilightColor, rim);
     float towardTwilight = 1.0 - smoothstep(${ATMOSPHERE_TWILIGHT_END_DOT}, ${ATMOSPHERE_TWILIGHT_START_DOT}, dayDot);
-    vec3 dayOrTwilightColor = mix(glowColor, radialTwilightColor, towardTwilight);
     float towardNight = 1.0 - smoothstep(${ATMOSPHERE_TERMINATOR_FADE_DOT}, ${ATMOSPHERE_NIGHT_START_DOT}, dayDot);
+    float antiSolarSuppression = smoothstep(-1.0, ${ATMOSPHERE_ANTI_SOLAR_SUPPRESSION_DOT}, antiSolarFactor);
+    towardTwilight *= antiSolarSuppression;
+    vec3 dayOrTwilightColor = mix(glowColor, radialTwilightColor, towardTwilight);
     vec3 finalColor = mix(dayOrTwilightColor, nightColor, towardNight);
     float sunFactor = mix(1.0, 0.3, towardNight);
     float glow = rim * sunFactor * intensity;
@@ -628,7 +675,7 @@ function Atmosphere({
   `;
 
   return (
-    <mesh>
+    <mesh ref={mesh}>
       <sphereGeometry args={[outerRadius, 100, 100]} />
       <shaderMaterial
         ref={material}
@@ -639,7 +686,9 @@ function Atmosphere({
         uniforms={{
           sunDirection: { value: new Vector3(0, 0, 1) },
           glowColor: { value: glowColor },
-          ...(hasTint ? { twilightColor: { value: twilightColor }, nightColor: { value: nightColor } } : {}),
+          ...(hasTint
+            ? { twilightColor: { value: twilightColor }, nightColor: { value: nightColor }, antiSolarFactor: { value: 0 } }
+            : {}),
           intensity: { value: intensity },
         }}
         vertexShader={`
@@ -657,7 +706,7 @@ function Atmosphere({
           varying vec3 vWorldPosition;
           uniform vec3 sunDirection;
           uniform vec3 glowColor;
-          ${hasTint ? "uniform vec3 twilightColor;\nuniform vec3 nightColor;" : ""}
+          ${hasTint ? "uniform vec3 twilightColor;\nuniform vec3 nightColor;\nuniform float antiSolarFactor;" : ""}
           uniform float intensity;
           void main() {
             ${rimGlsl}
