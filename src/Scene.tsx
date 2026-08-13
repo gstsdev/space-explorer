@@ -154,6 +154,27 @@ function atmosphereIntensity(relativeSurfacePressure: number): number {
   return MathUtils.clamp(Math.sqrt(relativeSurfacePressure), ATMOSPHERE_MIN_INTENSITY, ATMOSPHERE_MAX_INTENSITY);
 }
 
+// Shared day/night law for both atmosphere rim shaders (Atmosphere's shell
+// and TexturedSurface's surface reinforcement): fully lit whenever the sun
+// is above the local horizon (angle between the light ray and the surface
+// normal <= 90°, i.e. dot(N, sunDir) >= 0), fading to fully transparent by
+// 5° past that. A sharp cutoff right at the horizon, not a broad half-lambert
+// or a floored one — replaces this file's earlier, separate day/night
+// treatments for the two rim terms.
+const ATMOSPHERE_TERMINATOR_FADE_DOT = Math.cos((95 * Math.PI) / 180); // dot(N, sunDir) at 5° past the terminator, ≈ -0.0872
+
+// The Atmosphere shell's tinted color transitions only (see tintedGlsl in
+// Atmosphere) — real gradients, not hairline anti-aliasing edges.
+// Day -> twilight: a wide, gentle 10° fade from the planet's own atmosphere
+// color into its twilightColor.
+const ATMOSPHERE_TWILIGHT_START_DOT = Math.cos((80 * Math.PI) / 180); // dot(N, sunDir) at 80°, ≈ 0.1736
+const ATMOSPHERE_TWILIGHT_END_DOT = Math.cos((90 * Math.PI) / 180); // dot(N, sunDir) at 90°, ≈ 0.0
+// Twilight -> night: a narrower 3° fade, so the solid-twilightColor plateau
+// between this and ATMOSPHERE_TWILIGHT_END_DOT above stays short (2°, 90°-92°)
+// rather than the wide gap a symmetric ±width around ATMOSPHERE_TERMINATOR_FADE_DOT
+// used to leave.
+const ATMOSPHERE_NIGHT_START_DOT = Math.cos((91 * Math.PI) / 180); // dot(N, sunDir) at 92°, ≈ -0.0349
+
 // TexturedSurface's surface reinforcement term only (see
 // ATMOSPHERE_RIM_FADE_WIDTH below for the Atmosphere shell's own,
 // differently-shaped version of this problem). A raw Fresnel term
@@ -327,15 +348,10 @@ function TexturedSurface({
           // doc comment for why the rim term uses these instead of the
           // object-space pair above.
           emissiveAdditions += `
-            // Tight terminator band, not a broad half-lambert: this term
-            // stands in for light bouncing near the ground itself, which
-            // needs actual local daylight — unlike the Atmosphere shell
-            // (upper-air sunlight can still reach past local sunset), there's
-            // no physical case for the ground-level reinforcement to still
-            // read on the night side, so it should be fully off through
-            // virtually the whole night hemisphere, not just at the single
-            // antisolar point a plain *0.5+0.5 remap would floor to 0 at.
-            float atmosphereDayFactor = smoothstep(-0.15, 0.15, dot(normalize(vObjectNormal), normalize(sunDirection)));
+            // See ATMOSPHERE_TERMINATOR_FADE_DOT: lit whenever the sun is
+            // above the local horizon, fading to fully transparent by 5°
+            // past it.
+            float atmosphereDayFactor = smoothstep(${ATMOSPHERE_TERMINATOR_FADE_DOT}, 0.0, dot(normalize(vObjectNormal), normalize(sunDirection)));
             float atmosphereRimBase = 1.0 - abs(dot(normalize(vNormal), normalize(vViewPosition)));
             float atmosphereRim = smoothstep(${ATMOSPHERE_RIM_INNER}, 1.0, atmosphereRimBase);
             totalEmissiveRadiance += atmosphereColor * atmosphereRim * atmosphereDayFactor * atmosphereIntensity;`;
@@ -517,10 +533,63 @@ function Atmosphere({
   const outerRadius = radius * (1 + (atmosphere.scaleHeightKm * ATMOSPHERE_HEIGHT_EXAGGERATION) / radiusKm);
   const intensity = atmosphereIntensity(atmosphere.relativeSurfacePressure);
   const glowColor = useMemo(() => new Color(atmosphere.color), [atmosphere.color]);
+  // Both optional (see PlanetAtmosphereData's comment) — when a planet
+  // doesn't have its own tuned twilight/night color, this component skips
+  // the tinting below entirely rather than guessing a default, so it just
+  // fades glowColor's own brightness as before.
+  const twilightColor = useMemo(
+    () => (atmosphere.twilightColor ? new Color(atmosphere.twilightColor) : null),
+    [atmosphere.twilightColor],
+  );
+  const nightColor = useMemo(
+    () => (atmosphere.nightColor ? new Color(atmosphere.nightColor) : null),
+    [atmosphere.nightColor],
+  );
+  const hasTint = Boolean(twilightColor && nightColor);
 
   useFrame(() => {
     if (material.current) material.current.uniforms.sunDirection.value.copy(sunDirection.current);
   }, FRAME_PRIORITY.updateVisibility);
+
+  // Shared by both branches below: rim is the distance from the shell's own
+  // true silhouette (0 there, growing toward the ground) — see
+  // ATMOSPHERE_RIM_FADE_WIDTH's comment for why this, and not the raw
+  // Fresnel term, is what brightness ramps against: this way the glow is
+  // brightest hugging the ground and fades out into space, not the reverse.
+  const rimGlsl = `
+    vec3 viewDir = normalize(cameraPosition - vWorldPosition);
+    float rimBase = 1.0 - abs(dot(vNormal, viewDir));
+    float edgeFade = 1.0 - rimBase;
+    float rim = smoothstep(0.0, ${ATMOSPHERE_RIM_FADE_WIDTH}, edgeFade);
+  `;
+
+  // With a tuned twilight/night color (see PlanetAtmosphereData), the shell
+  // shifts hue across three bands instead of just fading to black: the
+  // planet's own atmosphere color, easing (smoothstep's own cubic
+  // ease-in/ease-out) into its twilightColor over the wide 80-90° band
+  // (ATMOSPHERE_TWILIGHT_START_DOT/END_DOT), holding that color over a
+  // short 90-92° plateau, then easing into its nightColor (with a dimmed,
+  // not zeroed, brightness) over the 92-95° band (ATMOSPHERE_NIGHT_START_DOT
+  // to ATMOSPHERE_TERMINATOR_FADE_DOT).
+  const tintedGlsl = `
+    float dayDot = dot(vNormal, normalize(sunDirection));
+    float towardTwilight = 1.0 - smoothstep(${ATMOSPHERE_TWILIGHT_END_DOT}, ${ATMOSPHERE_TWILIGHT_START_DOT}, dayDot);
+    vec3 dayOrTwilightColor = mix(glowColor, twilightColor, towardTwilight);
+    float towardNight = 1.0 - smoothstep(${ATMOSPHERE_TERMINATOR_FADE_DOT}, ${ATMOSPHERE_NIGHT_START_DOT}, dayDot);
+    vec3 finalColor = mix(dayOrTwilightColor, nightColor, towardNight);
+    float sunFactor = mix(1.0, 0.3, towardNight);
+    float glow = rim * sunFactor * intensity;
+    gl_FragColor = vec4(finalColor, glow);
+  `;
+
+  // Without a tuned color (see PlanetAtmosphereData): plain single-color
+  // glow, lit whenever the sun is above the local horizon and fading to
+  // fully transparent by 5° past it — see ATMOSPHERE_TERMINATOR_FADE_DOT.
+  const untintedGlsl = `
+    float sunFactor = smoothstep(${ATMOSPHERE_TERMINATOR_FADE_DOT}, 0.0, dot(vNormal, normalize(sunDirection)));
+    float glow = rim * sunFactor * intensity;
+    gl_FragColor = vec4(glowColor, glow);
+  `;
 
   return (
     <mesh>
@@ -534,6 +603,7 @@ function Atmosphere({
         uniforms={{
           sunDirection: { value: new Vector3(0, 0, 1) },
           glowColor: { value: glowColor },
+          ...(hasTint ? { twilightColor: { value: twilightColor }, nightColor: { value: nightColor } } : {}),
           intensity: { value: intensity },
         }}
         vertexShader={`
@@ -551,27 +621,11 @@ function Atmosphere({
           varying vec3 vWorldPosition;
           uniform vec3 sunDirection;
           uniform vec3 glowColor;
+          ${hasTint ? "uniform vec3 twilightColor;\nuniform vec3 nightColor;" : ""}
           uniform float intensity;
           void main() {
-            vec3 viewDir = normalize(cameraPosition - vWorldPosition);
-            float rimBase = 1.0 - abs(dot(vNormal, viewDir));
-            // Distance from the shell's own true silhouette (0 there,
-            // growing toward the ground) — see ATMOSPHERE_RIM_FADE_WIDTH's
-            // comment for why this, and not rimBase directly, is what
-            // brightness ramps against: this way the glow is brightest
-            // hugging the ground and fades out into space, not the reverse.
-            float edgeFade = 1.0 - rimBase;
-            float rim = smoothstep(0.0, ${ATMOSPHERE_RIM_FADE_WIDTH}, edgeFade);
-            // Unlike TexturedSurface's ground-level reinforcement term, this
-            // shell keeps a floor on its night side rather than fading to
-            // black: it's real upper-atmosphere air, and upper-atmosphere air
-            // keeps catching direct sunlight at a grazing angle well after
-            // local sunset at the ground below it (the same reason twilight
-            // exists at all) — so a fully dark night limb here would be the
-            // less realistic choice, not the more realistic one.
-            float sunFactor = clamp(dot(vNormal, normalize(sunDirection)) * 0.5 + 0.5, 0.3, 1.0);
-            float glow = rim * sunFactor * intensity;
-            gl_FragColor = vec4(glowColor, glow);
+            ${rimGlsl}
+            ${hasTint ? tintedGlsl : untintedGlsl}
           }
         `}
       />
