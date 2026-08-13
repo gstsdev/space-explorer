@@ -187,21 +187,6 @@ const ATMOSPHERE_NIGHT_START_DOT = Math.cos((90.75 * Math.PI) / 180); // dot(N, 
 // around); values above ~0.5 start reading as barely any dimming at all.
 const ATMOSPHERE_UNTINTED_NIGHT_DARKEN = 0.2;
 
-// TexturedSurface's surface reinforcement term only (see
-// ATMOSPHERE_RIM_FADE_WIDTH below for the Atmosphere shell's own,
-// differently-shaped version of this problem). A raw Fresnel term
-// (1 - |dot(N,V)|) doesn't stay confined to a thin band at the camera
-// distances this app actually uses: at MIN_VIEW_MULTIPLIER (3 body-radii
-// from center, the closest the camera gets), the visible cap spans ~70° from
-// the sub-camera point, and that Fresnel term rises well above zero starting
-// around 40-50° in — over half the visible disk, not just its edge, would
-// read as "glowing" with only an exponent to hold it back. This surface term
-// isn't occlusion-limited the way the shell is (it's painted directly on the
-// ground material, visible wherever the ground itself is), so it needs its
-// own hard, camera-distance-independent guarantee: smoothstep(inner, 1.0, ·)
-// gives zero glow until the grazing angle is at least this close to the true
-// silhouette (1.0).
-const ATMOSPHERE_RIM_INNER = 0.85;
 
 // The Atmosphere shell only. The shell is only ever visible in the thin
 // annulus where it isn't occluded by the opaque ground beneath it (see the
@@ -267,22 +252,42 @@ type OnFocus = (target: Object3D, id: string) => void;
 // wherever that surface point faces away from the sun.
 //
 // atmosphere (optional) adds a second, independent effect through the same
-// onBeforeCompile patch: a faint rim glow at the mesh's own silhouette,
-// coupling the external Atmosphere shell's glow down onto the surface it's
-// wrapping (real limb brightening lights the edge of the daylit ground
-// itself, not just the air above it). Unlike the day/night split above,
-// the rim term needs a view-dependent grazing angle, so it reuses Phong's
-// own built-in vNormal/vViewPosition varyings (already view-space, already
-// correct for this mesh's live rotation via the standard normalMatrix/
-// modelViewMatrix three.js recomputes every frame) rather than the
-// object-space vObjectNormal/sunDirection pair above — no camera matrix
+// onBeforeCompile patch: a radial gradient across the whole visible
+// hemisphere, coupling the external Atmosphere shell's glow down onto the
+// surface it's wrapping (real limb brightening lights the edge of the
+// daylit ground itself, not just the air above it) — transparent at the
+// point facing the camera dead-on, easing toward the atmosphere color at
+// the grazing silhouette, always recentering on the camera since it's
+// computed from the live view direction every frame. Unlike the day/night
+// split above, this needs that view-dependent grazing angle, so it reuses
+// Phong's own built-in vNormal/vViewPosition varyings (already view-space,
+// already correct for this mesh's live rotation via the standard
+// normalMatrix/modelViewMatrix three.js recomputes every frame) rather than
+// the object-space vObjectNormal/sunDirection pair above — no camera matrix
 // exists in that object-space pair to project a view angle through.
 //
-// Deliberately dimmer than the Atmosphere shell's own glow (see
-// atmosphereIntensity) — the shell already carries the limb glow on its
-// own, so this is a subtle reinforcement where the two overlap at the
-// silhouette, not a second full-strength copy of it.
-const SURFACE_GLOW_FACTOR = 0.4;
+// Deliberately subtle (see atmosphereIntensity) — the shell already carries
+// the limb glow on its own, so this is a soft reinforcement where the two
+// overlap toward the edge, not a second full-strength copy of it.
+const SURFACE_GLOW_FACTOR = 0.15;
+
+// Shapes the radial gradient above: the raw Fresnel term (1 - |dot(N,V)|)
+// is 0 at the point facing the camera and 1 at the true silhouette,
+// already exactly the gradient wanted, so this just weights it toward the
+// edge (rather than a linear ramp visible across the whole disk) — higher
+// pulls the visible color closer to the edge, 1.0 would make it fully linear.
+const ATMOSPHERE_SURFACE_GRADIENT_EXPONENT = 2;
+
+// This term's own night floor — deliberately much lower than the Atmosphere
+// shell's ATMOSPHERE_UNTINTED_NIGHT_DARKEN, not shared with it. The shell
+// floats over black space either way, day or night, so darkening it instead
+// of fading it out reads as "the same object, dimmer." This term is painted
+// on the ground itself, which on the night side is otherwise essentially
+// black (no direct light there) — so even a 20%-strength glow (the shell's
+// floor) stands out starkly against that black backdrop, reading as
+// *stronger* than the day side despite being dimmer in absolute terms. A
+// much lower floor keeps it barely-there instead of a false highlight.
+const ATMOSPHERE_SURFACE_NIGHT_DARKEN = 0.05;
 
 function TexturedSurface({
   textures,
@@ -360,13 +365,20 @@ function TexturedSurface({
           // doc comment for why the rim term uses these instead of the
           // object-space pair above.
           emissiveAdditions += `
-            // See ATMOSPHERE_TERMINATOR_FADE_DOT: lit whenever the sun is
-            // above the local horizon, fading to fully transparent by 5°
-            // past it.
-            float atmosphereDayFactor = smoothstep(${ATMOSPHERE_TERMINATOR_FADE_DOT}, 0.0, dot(normalize(vObjectNormal), normalize(sunDirection)));
+            // Radial gradient across the whole visible hemisphere: 0 (fully
+            // transparent) at the point facing the camera dead-on, easing
+            // toward 1 (full atmosphereColor) at the grazing silhouette —
+            // see ATMOSPHERE_SURFACE_GRADIENT_EXPONENT and this component's
+            // own doc comment.
             float atmosphereRimBase = 1.0 - abs(dot(normalize(vNormal), normalize(vViewPosition)));
-            float atmosphereRim = smoothstep(${ATMOSPHERE_RIM_INNER}, 1.0, atmosphereRimBase);
-            totalEmissiveRadiance += atmosphereColor * atmosphereRim * atmosphereDayFactor * atmosphereIntensity;`;
+            float atmosphereRim = pow(atmosphereRimBase, ${ATMOSPHERE_SURFACE_GRADIENT_EXPONENT}.0);
+            // Darkens toward night rather than fading out (same shape as
+            // the Atmosphere shell's day/night law), but with its own,
+            // much lower floor — see ATMOSPHERE_SURFACE_NIGHT_DARKEN for
+            // why this can't just reuse the shell's.
+            float atmosphereDaylight = smoothstep(${ATMOSPHERE_TERMINATOR_FADE_DOT}, 0.0, dot(normalize(vObjectNormal), normalize(sunDirection)));
+            vec3 atmosphereFinalColor = mix(atmosphereColor * ${ATMOSPHERE_SURFACE_NIGHT_DARKEN}, atmosphereColor, atmosphereDaylight);
+            totalEmissiveRadiance += atmosphereFinalColor * atmosphereRim * atmosphereIntensity;`;
         }
 
         shader.fragmentShader = shader.fragmentShader
