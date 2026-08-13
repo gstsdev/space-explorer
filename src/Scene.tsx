@@ -170,12 +170,12 @@ const ATMOSPHERE_TERMINATOR_FADE_DOT = Math.cos((95 * Math.PI) / 180); // dot(N,
 // Day -> twilight: a wide, gentle 10° fade from the planet's own atmosphere
 // color into its twilightColor.
 const ATMOSPHERE_TWILIGHT_START_DOT = Math.cos((80 * Math.PI) / 180); // dot(N, sunDir) at 80°, ≈ 0.1736
-const ATMOSPHERE_TWILIGHT_END_DOT = Math.cos((90 * Math.PI) / 180); // dot(N, sunDir) at 90°, ≈ 0.0
+const ATMOSPHERE_TWILIGHT_END_DOT = Math.cos((90.25 * Math.PI) / 180); // dot(N, sunDir) at 90°, ≈ 0.0
 // Twilight -> night: a narrower 3° fade, so the solid-twilightColor plateau
 // between this and ATMOSPHERE_TWILIGHT_END_DOT above stays short (2°, 90°-92°)
 // rather than the wide gap a symmetric ±width around ATMOSPHERE_TERMINATOR_FADE_DOT
 // used to leave.
-const ATMOSPHERE_NIGHT_START_DOT = Math.cos((91 * Math.PI) / 180); // dot(N, sunDir) at 92°, ≈ -0.0349
+const ATMOSPHERE_NIGHT_START_DOT = Math.cos((90.75 * Math.PI) / 180); // dot(N, sunDir) at 92°, ≈ -0.0349
 
 // Atmosphere's untinted branch only (no PlanetAtmosphereData.nightColor —
 // see untintedGlsl): rather than fading to transparent on the night side,
