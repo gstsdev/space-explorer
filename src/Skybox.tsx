@@ -10,7 +10,7 @@ import { EquirectangularReflectionMapping, SRGBColorSpace } from "three";
 // change with camera position, only rotation. scene.background does exactly
 // that: Three renders it using only the camera's orientation, never its
 // position, so it can't have that bug by construction.
-export function Skybox({ url }: { url: string }) {
+export function Skybox({ url, visible }: { url: string; visible: boolean }) {
   const texture = useTexture(url);
   const textureRef = useRef(texture);
   const scene = useThree((state) => state.scene);
@@ -20,8 +20,14 @@ export function Skybox({ url }: { url: string }) {
     textureRef.current.mapping = EquirectangularReflectionMapping;
     textureRef.current.colorSpace = SRGBColorSpace;
     textureRef.current.needsUpdate = true;
-    sceneRef.current.background = textureRef.current;
   }, []);
+
+  // null falls back to the renderer's clear color (the same black used via
+  // <color attach="background"> while this texture loads), so hiding the
+  // skybox doesn't need a second texture or an extra mesh.
+  useEffect(() => {
+    sceneRef.current.background = visible ? textureRef.current : null;
+  }, [visible]);
 
   return null;
 }

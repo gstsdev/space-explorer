@@ -19,6 +19,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(SUN_DATA.id);
   const [showOrbits, setShowOrbits] = useState(true);
   const [showPlaceholders, setShowPlaceholders] = useState(true);
+  const [showStars, setShowStars] = useState(true);
   const [pictureMode, setPictureMode] = useState(false);
 
   useEffect(() => {
@@ -43,7 +44,7 @@ export default function App() {
         <color attach="background" args={["#000000"]} />
         <ambientLight intensity={0.15} />
         <Suspense fallback={null}>
-          <Skybox url="/textures/skybox/milkyway.jpg" />
+          <Skybox url="/textures/skybox/milkyway.jpg" visible={showStars} />
         </Suspense>
         <Scene
           selectedId={selectedId}
@@ -67,6 +68,8 @@ export default function App() {
             onToggleOrbits={() => setShowOrbits((value) => !value)}
             showPlaceholders={showPlaceholders}
             onTogglePlaceholders={() => setShowPlaceholders((value) => !value)}
+            showStars={showStars}
+            onToggleStars={() => setShowStars((value) => !value)}
             onEnterPictureMode={() => setPictureMode(true)}
           />
         </>
