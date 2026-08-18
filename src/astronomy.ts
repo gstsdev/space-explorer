@@ -77,7 +77,8 @@ export const DEFAULT_SPEED_EXPONENT = 0;
 
 // A planet's full texture set — deliberately all-or-nothing (rather than
 // each map individually optional) since specular/normal maps are meaningless
-// without the base color map, and it keeps the loading code in Scene.tsx simple.
+// without the base color map, and it keeps the loading code in
+// Planet/TexturedSurface.tsx simple.
 export type PlanetTextures = {
   map: string;
   normalMap?: string;
@@ -99,14 +100,14 @@ export type PlanetAtmosphereData = {
   color: string;
   // Real atmospheric scale height in km (how fast pressure/density falls
   // off with altitude). Every value here is under 0.3% of its own planet's
-  // radius — true scale that's sub-pixel and invisible, so Scene.tsx
-  // exaggerates it (ATMOSPHERE_HEIGHT_EXAGGERATION) for the rendered glow
-  // shell's thickness, the same problem placeholders solve for whole-planet
-  // visibility at a distance.
+  // radius — true scale that's sub-pixel and invisible, so
+  // Planet/Atmosphere.tsx exaggerates it (ATMOSPHERE_HEIGHT_EXAGGERATION) for
+  // the rendered glow shell's thickness, the same problem placeholders solve
+  // for whole-planet visibility at a distance.
   scaleHeightKm: number;
   // Real surface pressure relative to Earth's 101.325 kPa (Earth = 1) —
-  // drives the glow's intensity in Scene.tsx. Applied there via sqrt and
-  // clamped (ATMOSPHERE_MIN_INTENSITY/MAX_INTENSITY): Venus's real 92x
+  // drives the glow's intensity in Planet/Atmosphere.tsx. Applied there via
+  // sqrt and clamped (ATMOSPHERE_MIN_INTENSITY/MAX_INTENSITY): Venus's real 92x
   // would otherwise blow the glow out to solid white, and Mars's real
   // 0.0063x would otherwise be indistinguishable from nothing.
   relativeSurfacePressure: number;
@@ -116,9 +117,9 @@ export type PlanetAtmosphereData = {
   // below by scattered ground/city light the way the real ground-level sky
   // is). Composition-dependent per atmosphere, not derived from
   // color/scaleHeightKm/relativeSurfacePressure above, and optional:
-  // Scene.tsx falls back to a muted default for any planet without its own
-  // tuned value here, rather than asserting an unverified color for
-  // atmospheres this hasn't been reasoned through for.
+  // Planet/Atmosphere.tsx falls back to a muted default for any planet
+  // without its own tuned value here, rather than asserting an unverified
+  // color for atmospheres this hasn't been reasoned through for.
   nightColor?: string;
   // Tint for the sunset/twilight band along the terminator, rendered as a
   // surface-level color-tint term in TexturedSurface (see that component's
@@ -148,7 +149,7 @@ export type PlanetData = {
   // alone (a single rotation about world +X) only happens to be correct
   // for Earth, because Earth's own equator defines the reference frame
   // these RA/Dec values are measured against (ascendingNodeDegrees=0) — see
-  // Scene.tsx's polePositionWorld for how this converts into world space.
+  // Planet.tsx's polePositionWorld for how this converts into world space.
   // IAU convention always lists the pole on the invariable-plane-north
   // side regardless of spin direction (unlike the axialTiltDegrees-based
   // "flip past 90° for retrograde" convention above) — do not flip this
@@ -525,11 +526,11 @@ export function moonGeocentricEclipticPosition(daysSinceEpoch: number): {
 // basin to highest peak, ~20 km total relief). Unlike the atmosphere
 // shell's deliberately exaggerated height (ATMOSPHERE_HEIGHT_EXAGGERATION),
 // this is applied at true scale via displacementMap/displacementScale in
-// Scene.tsx: real lunar relief is coarse enough to read even at true scale
-// once close enough to see the mesh at all. The sourced displacement
-// texture's own black/white-to-km calibration isn't independently verified
-// against real elevation data, so this is a reasonable real-magnitude
-// approximation, not a precisely calibrated one.
+// Moon/MoonSurface.tsx: real lunar relief is coarse enough to read even at
+// true scale once close enough to see the mesh at all. The sourced
+// displacement texture's own black/white-to-km calibration isn't
+// independently verified against real elevation data, so this is a
+// reasonable real-magnitude approximation, not a precisely calibrated one.
 export const MOON_RELIEF_KM = 20;
 
 export const SUN_DATA = {
@@ -622,7 +623,7 @@ export const PLANETS: PlanetData[] = [
     // Empirically calibrated against real JPL data (not the raw IAU W0 of
     // 190.147°) — see tiltOrbitalPosition's comment for why. Longitude alone
     // came out a stable ~91.77° off across a full year of test dates until
-    // Scene.tsx's axialTiltRadians was also negated (a separate, sibling fix,
+    // Planet.tsx's axialTiltRadians was also negated (a separate, sibling fix,
     // not something to redo here); with both fixes in place, this value gives
     // real sub-solar longitude AND latitude matches within ~0.2° across five
     // dates spanning a full year.

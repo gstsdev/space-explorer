@@ -10,11 +10,12 @@ import { MIN_VIEW_MULTIPLIER, SUN_RADIUS, VIEW_MULTIPLIER } from "./astronomy";
 
 // Every focusable body stashes how many of its own radii away the camera
 // should park, and how close it's allowed to get (see userData.focusDistance
-// / userData.minViewDistance in Scene.tsx) — real planets are tiny, so "8
-// radii from Mars" and "8 radii from the sun" are wildly different absolute
-// distances, but both read as "a good look at the body." These are the
-// fallbacks for when nothing is focused (focusTarget is null), which by
-// convention means "looking at the sun" — so they mirror the sun's own values.
+// / userData.minViewDistance in Planet.tsx/Moon.tsx/Sun.tsx) — real planets
+// are tiny, so "8 radii from Mars" and "8 radii from the sun" are wildly
+// different absolute distances, but both read as "a good look at the body."
+// These are the fallbacks for when nothing is focused (focusTarget is
+// null), which by convention means "looking at the sun" — so they mirror
+// the sun's own values.
 const DEFAULT_FOCUS_DISTANCE = SUN_RADIUS * VIEW_MULTIPLIER;
 const DEFAULT_MIN_DISTANCE = SUN_RADIUS * MIN_VIEW_MULTIPLIER;
 

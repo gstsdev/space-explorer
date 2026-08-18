@@ -16,8 +16,8 @@ export const FRAME_PRIORITY = {
   // test whether the Moon blocks the sun from a given point on Earth's
   // surface) — the Moon writes it here, strictly after every body's own
   // updatePosition (so it reads Earth's *this-frame* position, not last
-  // frame's) and strictly before anything downstream reads it. See Scene.tsx's
-  // Moon and Planet components.
+  // frame's) and strictly before anything downstream reads it. See Moon.tsx
+  // and Planet.tsx.
   updateShadowCasters: -15,
   updateCamera: -10,
   updateVisibility: 0,
