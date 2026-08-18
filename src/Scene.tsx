@@ -208,6 +208,20 @@ function eclipticPositionWorld(
   ];
 }
 
+const MOON_ORBIT_LINE_SEGMENTS = 512;
+
+// Samples one sidereal month of the Moon's real (perturbed) path starting
+// from daysSinceEpoch, for the orbit line — shared by the Moon component's
+// initial mount-time render and its periodic re-sample (see
+// MOON_ORBIT_LINE_REFRESH_SECONDS) so both build the exact same shape.
+function sampleMoonOrbitPoints(daysSinceEpoch: number): [number, number, number][] {
+  return Array.from({ length: MOON_ORBIT_LINE_SEGMENTS + 1 }, (_, i) => {
+    const sampleDaysSinceEpoch = daysSinceEpoch + (i / MOON_ORBIT_LINE_SEGMENTS) * MOON_SIDEREAL_MONTH_DAYS;
+    const { longitudeDegrees, latitudeDegrees, distanceKm } = moonGeocentricEclipticPosition(sampleDaysSinceEpoch);
+    return eclipticPositionWorld(longitudeDegrees, latitudeDegrees, distanceKm * KM_TO_UNITS);
+  });
+}
+
 const NORTH_POLE_AXIS = new Vector3(0, 1, 0);
 // The Moon's tidal-lock reference axis (see the Moon component) — the local
 // axis its texture's prime meridian lands on at zero rotation, same
@@ -220,6 +234,16 @@ const LOCAL_X_AXIS = new Vector3(1, 0, 0);
 // exceeds roughly the sum of their radii — this adds some margin for the
 // larger selection ring around a selected body.
 const MOON_PLACEHOLDER_MIN_SEPARATION = 3 * PLACEHOLDER_SIZE;
+
+// How often (real seconds, not simulated time) the Moon's orbit line
+// re-samples and rebuilds its geometry — see the Moon component's own
+// orbitPoints comment for why a one-time snapshot isn't enough. Real-time
+// rather than simulated-time-based specifically so the refresh rate doesn't
+// scale with the speed slider (at high playback speeds a simulated-time
+// threshold would fire every single frame); this bounds the recompute cost
+// the same way regardless of speed, and a few seconds of staleness at even
+// the fastest playback speed still reads as "current" to the eye.
+const MOON_ORBIT_LINE_REFRESH_SECONDS = 2;
 
 // Shared by the atmosphere shell (Atmosphere) and the surface rim glow
 // (TexturedSurface) so both derive "how strong does this planet's glow
@@ -1415,26 +1439,37 @@ function Moon({
   const switchDistance = radius / ANGULAR_THRESHOLD;
   const displacementScale = MOON_RELIEF_KM * KM_TO_UNITS;
 
-  // Static snapshot of the orbit trace for the line, sampled once per some
-  // fraction of a sidereal month starting from whatever moment this
-  // component mounts, rather than recomputed every frame — this is a
-  // purely-visual guide, not something that needs to track the real
-  // (continuously wobbling, per moonGeocentricEclipticPosition's own
-  // periodic terms) path exactly; it'll read as a slightly-off snapshot of
-  // that real path a month or more later, same as every other
-  // once-at-mount approximation in this file. Earth-relative, like the
-  // Moon's own position — rendered as Earth's child too (below), so it
-  // rides along automatically.
-  const orbitPoints = useMemo(() => {
-    const daysSinceEpoch = simulation.time / 86_400;
-    const segments = 512;
-    return Array.from({ length: segments + 1 }, (_, i) => {
-      const sampleDaysSinceEpoch = daysSinceEpoch + (i / segments) * MOON_SIDEREAL_MONTH_DAYS;
-      const { longitudeDegrees, latitudeDegrees, distanceKm } =
-        moonGeocentricEclipticPosition(sampleDaysSinceEpoch);
-      return eclipticPositionWorld(longitudeDegrees, latitudeDegrees, distanceKm * KM_TO_UNITS);
-    });
-  }, []);
+  // Initial orbit trace for the line's first paint, sampled one sidereal
+  // month forward from whatever moment this component mounts — kept fresh
+  // after that by the periodic re-sample below rather than left as a
+  // one-time snapshot (see that useFrame's own comment for why: unlike a
+  // planet's fixed ellipse, the Moon's real path — per
+  // moonGeocentricEclipticPosition's own periodic terms — visibly changes
+  // shape over the same timescale this app's speed slider can blow through
+  // in seconds). Earth-relative, like the Moon's own position — rendered as
+  // Earth's child too (below), so it rides along automatically.
+  const orbitPoints = useMemo(() => sampleMoonOrbitPoints(simulation.time / 86_400), []);
+  // Real seconds (not simulated time — see MOON_ORBIT_LINE_REFRESH_SECONDS)
+  // since the orbit line's geometry was last rebuilt below.
+  const orbitLineRefreshElapsed = useRef(0);
+
+  // Rebuilds the orbit line's geometry in place every
+  // MOON_ORBIT_LINE_REFRESH_SECONDS of real time, so it keeps tracking the
+  // Moon's actual (perturbed, continuously-changing-shape) path instead of
+  // drifting away from it — orbitPoints above is only ever this component's
+  // *first* paint. Mutates the ref's geometry directly (setPositions, same
+  // call drei's own <Line> makes internally when its points prop changes)
+  // rather than through React state/props: this needs to run periodically
+  // without forcing a re-render, the same reasoning behind every other
+  // .current mutation in this file.
+  useFrame((_, delta) => {
+    orbitLineRefreshElapsed.current += delta;
+    if (orbitLineRefreshElapsed.current < MOON_ORBIT_LINE_REFRESH_SECONDS) return;
+    orbitLineRefreshElapsed.current = 0;
+    if (!orbitLine.current) return;
+    const points = sampleMoonOrbitPoints(simulation.time / 86_400);
+    orbitLine.current.geometry.setPositions(points.flat());
+  });
 
   useFrame(() => {
     if (!group.current) return;
