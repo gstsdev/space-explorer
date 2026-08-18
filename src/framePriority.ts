@@ -12,6 +12,13 @@
 export const FRAME_PRIORITY = {
   advanceTime: -30,
   updatePosition: -20,
+  // Earth's eclipse-shadow shader needs the Moon's live world position (to
+  // test whether the Moon blocks the sun from a given point on Earth's
+  // surface) — the Moon writes it here, strictly after every body's own
+  // updatePosition (so it reads Earth's *this-frame* position, not last
+  // frame's) and strictly before anything downstream reads it. See Scene.tsx's
+  // Moon and Planet components.
+  updateShadowCasters: -15,
   updateCamera: -10,
   updateVisibility: 0,
 } as const;

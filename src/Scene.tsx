@@ -339,10 +339,21 @@ function TexturedSurface({
   textures,
   sunDirection,
   atmosphere,
+  eclipseShadow,
 }: {
   textures: PlanetTextures;
   sunDirection: RefObject<Vector3>;
   atmosphere?: PlanetAtmosphereData;
+  // Only ever set for Earth (see astronomy.ts's own comment on why the
+  // Moon is scoped specifically, not generalized to every planet): casts a
+  // real shadow onto this surface during a solar eclipse, via the same
+  // analytic ray-sphere technique PlanetRing already uses for Saturn's own
+  // ring shadow — see that component's doc comment for why this is a pure
+  // position/geometry test rather than a real scene light/shadow map.
+  // casterPositionObjectSpace is the caster's live position in this mesh's
+  // own (spinning) object space — the same frame vObjectPosition below is
+  // in — recomputed every frame by this planet's own Planet component.
+  eclipseShadow?: { casterPositionObjectSpace: RefObject<Vector3>; casterRadiusKm: number };
 }) {
   const maps = useTexture(textures);
   const mapsRef = useRef(maps);
@@ -365,10 +376,17 @@ function TexturedSurface({
     }
   }, [maps]);
 
-  const shaderUniforms = useRef<{ sunDirection: { value: Vector3 } } | null>(null);
+  const shaderUniforms = useRef<{
+    sunDirection: { value: Vector3 };
+    eclipseCasterPosition?: { value: Vector3 };
+  } | null>(null);
 
   useFrame(() => {
-    if (shaderUniforms.current) shaderUniforms.current.sunDirection.value.copy(sunDirection.current);
+    if (!shaderUniforms.current) return;
+    shaderUniforms.current.sunDirection.value.copy(sunDirection.current);
+    if (eclipseShadow && shaderUniforms.current.eclipseCasterPosition) {
+      shaderUniforms.current.eclipseCasterPosition.value.copy(eclipseShadow.casterPositionObjectSpace.current);
+    }
   }, FRAME_PRIORITY.updateVisibility);
 
   return (
@@ -379,10 +397,9 @@ function TexturedSurface({
       specular="#333333"
       shininess={15}
       onBeforeCompile={(shader) => {
-        if (!maps.nightMap && !atmosphere) return;
+        if (!maps.nightMap && !atmosphere && !eclipseShadow) return;
 
         shader.uniforms.sunDirection = { value: new Vector3(0, 0, 1) };
-        shaderUniforms.current = shader.uniforms as unknown as { sunDirection: { value: Vector3 } };
 
         shader.vertexShader = shader.vertexShader
           .replace("#include <common>", "#include <common>\nvarying vec3 vObjectNormal;")
@@ -427,9 +444,86 @@ function TexturedSurface({
             totalEmissiveRadiance += atmosphereFinalColor * atmosphereRim * atmosphereIntensity;`;
         }
 
-        shader.fragmentShader = shader.fragmentShader
+        let fragmentShader = shader.fragmentShader
           .replace("#include <common>", uniformDeclarations)
           .replace("#include <emissivemap_fragment>", emissiveAdditions);
+
+        if (eclipseShadow) {
+          shader.uniforms.eclipseCasterPosition = { value: new Vector3() };
+          shader.uniforms.eclipseCasterRadius = { value: eclipseShadow.casterRadiusKm * KM_TO_UNITS };
+
+          shader.vertexShader = shader.vertexShader
+            .replace("#include <common>", "#include <common>\nvarying vec3 vObjectPosition;")
+            .replace("#include <begin_vertex>", "#include <begin_vertex>\nvObjectPosition = position;");
+
+          fragmentShader = fragmentShader
+            .replace(
+              "#include <common>",
+              "#include <common>\nvarying vec3 vObjectPosition;\nuniform vec3 eclipseCasterPosition;\nuniform float eclipseCasterRadius;",
+            )
+            // Real ray-sphere shadow test — same core technique as
+            // PlanetRing's own ring-shadow shader, generalized for a caster
+            // that isn't at this surface's own local origin (unlike a
+            // planet's ring, which is always centered on the planet it
+            // shadows, the Moon sits off at its own position relative to
+            // Earth — see eclipseCasterPosition's own doc comment above):
+            // the shadow sphere is centered at eclipseCasterPosition rather
+            // than at (0,0,0), so casterOffset (fragment relative to *that*
+            // center) stands in for PlanetRing's vRingLocalPosition. Also
+            // uses the caster's own real radius rather than its real
+            // (smaller, distance-tapering) umbra cone, same simplification
+            // as the ring shadow's own planetRadius.
+            //
+            // Unlike the ring shadow, this one is deliberately *not* a hard
+            // edge: the ring shadow's own comment notes the sun's real
+            // angular size (~0.056° from Saturn) makes its penumbra a
+            // fraction of a percent of Saturn's radius, genuinely
+            // imperceptible — but at Earth-Moon range the same real
+            // half-angle (~0.25°, effectively the same as seen from Earth
+            // or the Moon) works out to a penumbra a few thousand km wide,
+            // comparable to the umbra itself, so a hard edge reads as
+            // visibly wrong here in a way it doesn't for the ring.
+            .replace(
+              "vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + reflectedLight.directSpecular + reflectedLight.indirectSpecular + totalEmissiveRadiance;",
+              `vec3 toEclipseSun = normalize(sunDirection);
+              vec3 casterOffset = vObjectPosition - eclipseCasterPosition;
+              float eb = dot(casterOffset, toEclipseSun);
+              float ec = dot(casterOffset, casterOffset) - eclipseCasterRadius * eclipseCasterRadius;
+              float eh = eb * eb - ec;
+              // Real perpendicular distance from the caster's center to the
+              // ray toward the sun (derived from eh/eb/eclipseCasterRadius
+              // above, valid whether or not the ray actually hits) minus the
+              // caster's own radius: negative once the ray passes through
+              // the sphere, zero exactly at its edge, growing positive
+              // outside it — the real quantity a soft shadow edge should be
+              // measured against, rather than the hard eh>0.0 boundary.
+              float closestApproach = sqrt(max(eclipseCasterRadius * eclipseCasterRadius - eh, 0.0));
+              float edgeDistance = closestApproach - eclipseCasterRadius;
+              // Real penumbra half-width at this fragment's real distance
+              // from the caster (abs(eb)): a soft shadow cone spreads out
+              // from the caster at roughly the sun's own real angular
+              // radius (~0.25° — the same, to a fraction of a degree,
+              // whether measured from Earth or the Moon) — 2*tan(0.25°).
+              float penumbraWidth = abs(eb) * 0.00873;
+              float inEclipseShadow = eb < 0.0 ? 1.0 - smoothstep(-penumbraWidth, penumbraWidth, edgeDistance) : 0.0;
+              // Suppresses only the *direct* light terms (as if the sun
+              // itself switched off for this fragment), leaving indirect/
+              // ambient and emissive untouched — an eclipsed, sun-facing
+              // fragment should read the same as this surface's own
+              // geometric night side (which is exactly this: directDiffuse/
+              // directSpecular ≈ 0 from the N·L clamp, indirectDiffuse and
+              // emissive unaffected), not an arbitrary darker/flatter tint.
+              float directLightFactor = 1.0 - inEclipseShadow;
+
+              vec3 outgoingLight = (reflectedLight.directDiffuse + reflectedLight.directSpecular) * directLightFactor + reflectedLight.indirectDiffuse + reflectedLight.indirectSpecular + totalEmissiveRadiance;`,
+            );
+        }
+
+        shader.fragmentShader = fragmentShader;
+        shaderUniforms.current = shader.uniforms as unknown as {
+          sunDirection: { value: Vector3 };
+          eclipseCasterPosition?: { value: Vector3 };
+        };
       }}
     />
   );
@@ -736,6 +830,14 @@ type PlanetProps = {
   // position-adding or frame-ordering dependency on this planet's own
   // per-frame update needed.
   children?: ReactNode;
+  // Only ever set for Earth: the Moon's own live world position (written
+  // every frame by the Moon component itself, at FRAME_PRIORITY.
+  // updateShadowCasters — see that priority's own comment for why this
+  // needs to be a Scene-level shared ref rather than something Planet can
+  // read directly, the way the Moon reads Earth's position via its own
+  // Three.js parent) plus its real radius, so this planet's own
+  // TexturedSurface can cast a real eclipse shadow from it.
+  moonShadowCaster?: { worldPosition: RefObject<Vector3>; radiusKm: number };
 };
 
 function Planet({
@@ -762,6 +864,7 @@ function Planet({
   showLabel,
   onFocus,
   children,
+  moonShadowCaster,
 }: PlanetProps) {
   const group = useRef<Group>(null);
   const mesh = useRef<Mesh>(null);
@@ -778,6 +881,11 @@ function Planet({
   // rotating surface, like a real day/night cycle) for free.
   const sunDirection = useRef(new Vector3(0, 0, 1));
   const inverseRotation = useRef(new Quaternion());
+  // Only meaningful when moonShadowCaster is set (Earth): the Moon's live
+  // position in this mesh's own object space, for TexturedSurface's
+  // eclipseShadow — see the new useFrame below and moonShadowCaster's own
+  // doc comment on PlanetProps.
+  const moonPositionObjectSpace = useRef(new Vector3());
   const ringSunDirection = useRef(new Vector3(0, 0, 1));
   // Sun direction in group-local space (== world space, since group only
   // ever translates) — the un-rotated base that sunDirection/ringSunDirection
@@ -943,6 +1051,20 @@ function Planet({
     }
   }, FRAME_PRIORITY.updatePosition);
 
+  // Only meaningful when moonShadowCaster is set (Earth). Needs to run
+  // strictly after FRAME_PRIORITY.updateShadowCasters, when the Moon
+  // component has already written moonShadowCaster.worldPosition for this
+  // frame (see that priority's own comment) — updateCamera works for this
+  // (any priority between updateShadowCasters and updateVisibility would),
+  // reused rather than adding a fourth micro-stage just for this one read.
+  useFrame(() => {
+    if (!moonShadowCaster || !group.current) return;
+    moonPositionObjectSpace.current
+      .copy(moonShadowCaster.worldPosition.current)
+      .sub(group.current.position)
+      .applyQuaternion(inverseRotation.current);
+  }, FRAME_PRIORITY.updateCamera);
+
   // Runs after CameraRig: by now the camera has already caught up to this
   // frame's (fresh) planet position, so this distance check can't read a
   // stale camera position — see FRAME_PRIORITY for why that split matters.
@@ -1006,7 +1128,16 @@ function Planet({
           <sphereGeometry args={[radius, 100, 100]} />
           {textures ? (
             <Suspense fallback={<meshStandardMaterial color={color} roughness={0.7} metalness={0.1} />}>
-              <TexturedSurface textures={textures} sunDirection={sunDirection} atmosphere={atmosphere} />
+              <TexturedSurface
+                textures={textures}
+                sunDirection={sunDirection}
+                atmosphere={atmosphere}
+                eclipseShadow={
+                  moonShadowCaster
+                    ? { casterPositionObjectSpace: moonPositionObjectSpace, casterRadiusKm: moonShadowCaster.radiusKm }
+                    : undefined
+                }
+              />
             </Suspense>
           ) : (
             <meshStandardMaterial color={color} roughness={0.7} metalness={0.1} />
@@ -1058,10 +1189,24 @@ function MoonSurface({
   textures,
   displacementScale,
   displacementBias,
+  sunDirection,
+  eclipseShadow,
 }: {
   textures: MoonData["textures"];
   displacementScale: number;
   displacementBias: number;
+  // Object-space (this mesh's own spin frame) direction to the sun — same
+  // role as Planet's own sunDirection, added here (unlike the rest of this
+  // material, which otherwise relies on Phong's own built-in lighting) only
+  // because the eclipse shadow test below needs it.
+  sunDirection: RefObject<Vector3>;
+  // Real shadow cast by Earth during a lunar eclipse — same analytic
+  // ray-sphere technique as TexturedSurface's own eclipseShadow (Earth's
+  // own, cast by the Moon) and PlanetRing's ring shadow; see either's doc
+  // comment for why this is a pure position/geometry test, and
+  // TexturedSurface's eclipseShadow for why the caster's position isn't
+  // this surface's own local origin.
+  eclipseShadow: { casterPositionObjectSpace: RefObject<Vector3>; casterRadiusKm: number };
 }) {
   const maps = useTexture(textures);
   const mapsRef = useRef(maps);
@@ -1069,6 +1214,17 @@ function MoonSurface({
     mapsRef.current.map.colorSpace = SRGBColorSpace;
     mapsRef.current.map.needsUpdate = true;
   }, [maps]);
+
+  const shaderUniforms = useRef<{
+    sunDirection: { value: Vector3 };
+    eclipseCasterPosition: { value: Vector3 };
+  } | null>(null);
+
+  useFrame(() => {
+    if (!shaderUniforms.current) return;
+    shaderUniforms.current.sunDirection.value.copy(sunDirection.current);
+    shaderUniforms.current.eclipseCasterPosition.value.copy(eclipseShadow.casterPositionObjectSpace.current);
+  }, FRAME_PRIORITY.updateVisibility);
 
   return (
     <meshPhongMaterial
@@ -1078,6 +1234,81 @@ function MoonSurface({
       displacementBias={displacementBias}
       specular="#111111"
       shininess={2}
+      onBeforeCompile={(shader) => {
+        shader.uniforms.sunDirection = { value: new Vector3(0, 0, 1) };
+        shader.uniforms.eclipseCasterPosition = { value: new Vector3() };
+        shader.uniforms.eclipseCasterRadius = { value: eclipseShadow.casterRadiusKm * KM_TO_UNITS };
+        shaderUniforms.current = shader.uniforms as unknown as {
+          sunDirection: { value: Vector3 };
+          eclipseCasterPosition: { value: Vector3 };
+        };
+
+        shader.vertexShader = shader.vertexShader
+          .replace("#include <common>", "#include <common>\nvarying vec3 vObjectPosition;\nvarying vec3 vObjectNormal;")
+          .replace("#include <begin_vertex>", "#include <begin_vertex>\nvObjectPosition = position;")
+          .replace("#include <beginnormal_vertex>", "#include <beginnormal_vertex>\nvObjectNormal = objectNormal;");
+
+        shader.fragmentShader = shader.fragmentShader
+          .replace(
+            "#include <common>",
+            "#include <common>\nvarying vec3 vObjectPosition;\nvarying vec3 vObjectNormal;\nuniform vec3 sunDirection;\nuniform vec3 eclipseCasterPosition;\nuniform float eclipseCasterRadius;",
+          )
+          // Same ray-sphere shadow test as TexturedSurface's own
+          // eclipseShadow — including the soft penumbra edge; see that
+          // component's doc comment for why a hard edge (like PlanetRing's
+          // ring shadow) reads as visibly wrong at Earth-Moon range.
+          .replace(
+            "vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + reflectedLight.directSpecular + reflectedLight.indirectSpecular + totalEmissiveRadiance;",
+            `vec3 toEclipseSun = normalize(sunDirection);
+            vec3 casterOffset = vObjectPosition - eclipseCasterPosition;
+            float eb = dot(casterOffset, toEclipseSun);
+            float ec = dot(casterOffset, casterOffset) - eclipseCasterRadius * eclipseCasterRadius;
+            float eh = eb * eb - ec;
+            float closestApproach = sqrt(max(eclipseCasterRadius * eclipseCasterRadius - eh, 0.0));
+            float edgeDistance = closestApproach - eclipseCasterRadius;
+            float penumbraWidth = abs(eb) * 0.00873;
+            // The ray-sphere test above is purely geometric — it doesn't
+            // know this fragment might already be on the Moon's own
+            // natural night side (facing away from the sun entirely,
+            // self-occluded by the Moon's own bulk long before any ray
+            // toward the sun could reach Earth). Without this check,
+            // "in eclipse shadow" reads true across the *whole* Moon
+            // during an eclipse, not just the half that would otherwise be
+            // sunlit — showing the blood-moon glow on the already-dark far
+            // side too. Smoothstep, not a hard >0.0 cutoff: this sits right
+            // next to Phong's own N·L-driven falloff, which fades
+            // continuously through the terminator rather than switching
+            // off — a hard cutoff here created a visible seam at exactly
+            // the terminator (the blood-moon glow snapping on/off) where
+            // the underlying lighting itself has no such edge. Reuses the
+            // same fade band every other terminator effect in this file
+            // does (see ATMOSPHERE_TERMINATOR_FADE_DOT's own comment).
+            float dayFacing = smoothstep(${ATMOSPHERE_TERMINATOR_FADE_DOT}, 0.0, dot(normalize(vObjectNormal), toEclipseSun));
+            float geometricEclipseShadow = eb < 0.0 ? 1.0 - smoothstep(-penumbraWidth, penumbraWidth, edgeDistance) : 0.0;
+            float inEclipseShadow = geometricEclipseShadow * dayFacing;
+            // See TexturedSurface's own eclipseShadow for why this only
+            // suppresses the *direct* light terms rather than darkening
+            // everything: an eclipsed fragment should read the same as
+            // this surface's own geometric night side, not a separate,
+            // arbitrarily darker tint. Earth's own eclipseShadow (the
+            // Moon's shadow on Earth) stops here — but a real lunar
+            // eclipse doesn't go fully dark the way a plain "no direct
+            // light" surface would: sunlight refracted through Earth's
+            // atmosphere (the same effect that reddens a sunset) still
+            // dimly reaches the Moon even deep in Earth's umbra, tinting
+            // it that same real red/orange rather than gray — the classic
+            // "blood moon". Modulated by diffuseColor (this fragment's own
+            // lit surface color) so it still reads as the Moon's own
+            // surface glowing that color, not a flat wash on top of it,
+            // and scaled by inEclipseShadow so it fades in gradually
+            // across the same penumbra the direct light fades out across.
+            float directLightFactor = 1.0 - inEclipseShadow;
+            vec3 bloodMoonColor = vec3(0.65, 0.2, 0.05);
+            vec3 bloodMoonGlow = bloodMoonColor * diffuseColor.rgb * 0.2 * inEclipseShadow;
+
+            vec3 outgoingLight = (reflectedLight.directDiffuse + reflectedLight.directSpecular) * directLightFactor + bloodMoonGlow + reflectedLight.indirectDiffuse + reflectedLight.indirectSpecular + totalEmissiveRadiance;`,
+          );
+      }}
     />
   );
 }
@@ -1099,6 +1330,8 @@ function Moon({
   showPlaceholder,
   showLabel,
   onFocus,
+  exposeWorldPosition,
+  earthRadiusKm,
 }: {
   moon: MoonData;
   selected: boolean;
@@ -1106,6 +1339,14 @@ function Moon({
   showPlaceholder: boolean;
   showLabel: boolean;
   onFocus: OnFocus;
+  // A Scene-level shared ref this writes its own live world position into
+  // every frame, so Earth's own TexturedSurface can read it for its
+  // eclipseShadow (a real solar-eclipse shadow cast by the Moon) — see
+  // FRAME_PRIORITY.updateShadowCasters and PlanetProps.moonShadowCaster's
+  // own comments for why this can't just be read directly the way this
+  // component reads Earth's own position (via its literal Three.js parent).
+  exposeWorldPosition: RefObject<Vector3>;
+  earthRadiusKm: number;
 }) {
   const group = useRef<Group>(null);
   const mesh = useRef<Mesh>(null);
@@ -1124,8 +1365,20 @@ function Moon({
   // Scratch for the LOD distance check below — group.current.position is
   // this mesh's position *relative to Earth's group* (its literal Three.js
   // parent), not world space, so unlike Planet's own equivalent check this
-  // needs the real (parent-composed) world position instead.
+  // needs the real (parent-composed) world position instead. Also the
+  // source this writes into exposeWorldPosition from (see the new useFrame
+  // below), and reused for MoonSurface's own eclipseShadow.
   const worldPositionScratch = useRef(new Vector3());
+  // This mesh's own inverse rotation and object-space sun direction — same
+  // roles as Planet's own inverseRotation/sunDirection, added here (unlike
+  // the rest of this component, which otherwise doesn't need object-space
+  // shading) only because MoonSurface's eclipseShadow needs them.
+  const inverseRotation = useRef(new Quaternion());
+  const sunDirection = useRef(new Vector3(0, 0, 1));
+  // Earth's live position in this mesh's own object space, for
+  // MoonSurface's eclipseShadow (Earth's shadow on the Moon during a lunar
+  // eclipse) — see the updateVisibility useFrame below.
+  const earthPositionObjectSpace = useRef(new Vector3());
 
   const radius = moon.radiusKm * KM_TO_UNITS;
   const semiMajorAxis = moon.semiMajorAxisKm * KM_TO_UNITS;
@@ -1203,15 +1456,49 @@ function Moon({
       towardEarthScratch.current.set(-ox, 0, -oz).normalize();
       spinQuaternion.current.setFromUnitVectors(LOCAL_X_AXIS, towardEarthScratch.current);
       mesh.current.quaternion.copy(spinQuaternion.current);
+      inverseRotation.current.copy(mesh.current.quaternion).invert();
     }
   }, FRAME_PRIORITY.updatePosition);
 
-  useFrame((state) => {
+  // Writes this frame's live world position for Earth's own TexturedSurface
+  // to read (see exposeWorldPosition's own doc comment) — must run after
+  // every body's own updatePosition (so getWorldPosition walks up to
+  // Earth's *this-frame* position, not last frame's) and before anything
+  // downstream reads it, hence its own dedicated priority.
+  useFrame(() => {
     if (!group.current) return;
     group.current.getWorldPosition(worldPositionScratch.current);
+    exposeWorldPosition.current.copy(worldPositionScratch.current);
+  }, FRAME_PRIORITY.updateShadowCasters);
+
+  useFrame((state) => {
+    if (!group.current) return;
+    // worldPositionScratch is already fresh for this frame — written above
+    // at FRAME_PRIORITY.updateShadowCasters, strictly before this stage.
     const distance = state.camera.position.distanceTo(worldPositionScratch.current);
     const closeEnough = distance < switchDistance;
     const showReal = closeEnough || !showPlaceholder;
+
+    if (group.current.parent) {
+      // Sun direction from the Moon ≈ sun direction from Earth — negligible
+      // parallax at 1 AU vs ~384,000 km, same approximation TexturedSurface's
+      // own eclipseShadow relies on for the reverse case. group.current.parent
+      // is Earth's own <group> (see Planet's children prop), whose .position
+      // is already world-space and, being set at Planet's own updatePosition
+      // (-20), guaranteed fresh here (0) regardless of same-tier ordering.
+      sunDirection.current
+        .copy(group.current.parent.position)
+        .multiplyScalar(-1)
+        .normalize()
+        .applyQuaternion(inverseRotation.current);
+      // Earth's position relative to the Moon, in the Moon's own object
+      // space — MoonSurface's eclipseShadow (Earth's shadow on the Moon
+      // during a lunar eclipse).
+      earthPositionObjectSpace.current
+        .copy(group.current.parent.position)
+        .sub(worldPositionScratch.current)
+        .applyQuaternion(inverseRotation.current);
+    }
 
     // The real Earth-Moon separation (~384,000 km) is tiny next to
     // interplanetary camera distances, so from far enough out the Moon's
@@ -1287,6 +1574,8 @@ function Moon({
               textures={moon.textures}
               displacementScale={displacementScale}
               displacementBias={-displacementScale / 2}
+              sunDirection={sunDirection}
+              eclipseShadow={{ casterPositionObjectSpace: earthPositionObjectSpace, casterRadiusKm: earthRadiusKm }}
             />
           </Suspense>
         </mesh>
@@ -1581,6 +1870,13 @@ export function Scene({
   showLabels: boolean;
   onFocus: OnFocus;
 }) {
+  // Shared with Earth's own Planet instance below (moonShadowCaster) so its
+  // TexturedSurface can cast a real eclipse shadow from the Moon — see
+  // PlanetProps.moonShadowCaster's own comment for why this needs to live
+  // here rather than being read directly the way the Moon reads Earth's own
+  // position.
+  const moonWorldPosition = useRef(new Vector3());
+
   return (
     <>
       <Sun
@@ -1614,6 +1910,11 @@ export function Scene({
           showPlaceholder={showPlaceholders}
           showLabel={showLabels}
           onFocus={onFocus}
+          moonShadowCaster={
+            planet.id === "earth"
+              ? { worldPosition: moonWorldPosition, radiusKm: EARTH_MOON_DATA.radiusKm }
+              : undefined
+          }
         >
           {planet.id === "earth" ? (
             <Moon
@@ -1623,6 +1924,8 @@ export function Scene({
               showPlaceholder={showPlaceholders}
               showLabel={showLabels}
               onFocus={onFocus}
+              exposeWorldPosition={moonWorldPosition}
+              earthRadiusKm={planet.radiusKm}
             />
           ) : null}
         </Planet>
