@@ -196,34 +196,6 @@ function atmosphereIntensity(relativeSurfacePressure: number): number {
 // non-transparent night state when it has no tuned nightColor).
 const ATMOSPHERE_TERMINATOR_FADE_DOT = Math.cos((95 * Math.PI) / 180); // dot(N, sunDir) at 5° past the terminator, ≈ -0.0872
 
-// The Atmosphere shell's tinted color transitions only (see tintedGlsl in
-// Atmosphere) — real gradients, not hairline anti-aliasing edges.
-// Day -> twilight: a wide, gentle 10° fade from the planet's own atmosphere
-// color into its twilightColor.
-const ATMOSPHERE_TWILIGHT_START_DOT = Math.cos((80 * Math.PI) / 180); // dot(N, sunDir) at 80°, ≈ 0.1736
-const ATMOSPHERE_TWILIGHT_END_DOT = Math.cos((90.25 * Math.PI) / 180); // dot(N, sunDir) at 90°, ≈ 0.0
-// Twilight -> night: a narrower 3° fade, so the solid-twilightColor plateau
-// between this and ATMOSPHERE_TWILIGHT_END_DOT above stays short (2°, 90°-92°)
-// rather than the wide gap a symmetric ±width around ATMOSPHERE_TERMINATOR_FADE_DOT
-// used to leave.
-const ATMOSPHERE_NIGHT_START_DOT = Math.cos((90.75 * Math.PI) / 180); // dot(N, sunDir) at 92°, ≈ -0.0349
-
-// The Atmosphere shell's tinted branch only — suppresses the twilight
-// tinting above when the CAMERA itself is roughly opposite the sun (looking
-// at Earth's whole night hemisphere at once), not just any one point's own
-// local terminator distance. From that viewing angle the visible limb sits
-// almost entirely *on* the terminator simultaneously (every point along it
-// is having its own sunset at once — the same geometry behind a "blood
-// moon"), so without this, the *entire* ring lights up twilight-orange
-// instead of the vivid blue a normal night-side view should show. Only
-// the twilight tint is suppressed, not the separate night-side dimming/
-// graying — that part still looks realistic even in this view. Compared
-// against dot(camera-from-planet direction, sun-from-planet direction):
-// -1 is exact anti-solar (full suppression, forced back to plain
-// glowColor), this threshold is where suppression starts easing off back
-// to the normal local per-point behavior.
-const ATMOSPHERE_ANTI_SOLAR_SUPPRESSION_DOT = -0.7;
-
 // Atmosphere's untinted branch only (no PlanetAtmosphereData.nightColor —
 // see untintedGlsl): rather than fading to transparent on the night side,
 // the glow settles at this fraction of the planet's own atmosphere color,
@@ -605,41 +577,19 @@ function Atmosphere({
   const outerRadius = radius * (1 + (atmosphere.scaleHeightKm * ATMOSPHERE_HEIGHT_EXAGGERATION) / radiusKm);
   const intensity = atmosphereIntensity(atmosphere.relativeSurfacePressure);
   const glowColor = useMemo(() => new Color(atmosphere.color), [atmosphere.color]);
-  // Both optional (see PlanetAtmosphereData's comment) — when a planet
-  // doesn't have its own tuned twilight/night color, this component skips
-  // the tinting below entirely rather than guessing a default, so it just
-  // fades glowColor's own brightness as before.
-  const twilightColor = useMemo(
-    () => (atmosphere.twilightColor ? new Color(atmosphere.twilightColor) : null),
-    [atmosphere.twilightColor],
-  );
+  // Optional (see PlanetAtmosphereData's comment) — when a planet doesn't
+  // have its own tuned night color, this component skips the tinting below
+  // entirely rather than guessing a default, so it just fades glowColor's
+  // own brightness as before.
   const nightColor = useMemo(
     () => (atmosphere.nightColor ? new Color(atmosphere.nightColor) : null),
     [atmosphere.nightColor],
   );
-  const hasTint = Boolean(twilightColor && nightColor);
-  // Scratch object for the anti-solar suppression computed below — see
-  // ATMOSPHERE_ANTI_SOLAR_SUPPRESSION_DOT — kept as a ref so it doesn't
-  // allocate every frame.
-  const toCamera = useRef(new Vector3());
+  const hasTint = Boolean(nightColor);
 
-  useFrame((state) => {
+  useFrame(() => {
     if (!material.current) return;
     material.current.uniforms.sunDirection.value.copy(sunDirection.current);
-
-    if (hasTint && mesh.current?.parent) {
-      // mesh.parent is Planet's own group, whose .position is the planet's
-      // world position (the group only ever translates — see this
-      // component's own doc comment). Deliberately not
-      // mesh.getWorldPosition()/matrixWorld here: matrixWorld is only
-      // refreshed by the renderer's own pass, which runs after every
-      // useFrame callback this frame, so it'd still read last frame's
-      // position — group.position is instead updated synchronously by
-      // Planet's own earlier-priority (updatePosition) useFrame, so this
-      // reads the current frame's fresh value.
-      toCamera.current.copy(state.camera.position).sub(mesh.current.parent.position).normalize();
-      material.current.uniforms.antiSolarFactor.value = toCamera.current.dot(sunDirection.current);
-    }
   }, FRAME_PRIORITY.updateVisibility);
 
   // Shared by both branches below: rim is the distance from the shell's own
@@ -654,40 +604,21 @@ function Atmosphere({
     float rim = smoothstep(0.0, ${ATMOSPHERE_RIM_FADE_WIDTH}, edgeFade);
   `;
 
-  // With a tuned twilight/night color (see PlanetAtmosphereData): real
-  // limb photos taken near the terminator (see this component's own doc
-  // comment) show the twilight color as a gradient *by altitude* — orange
-  // right where the atmosphere touches the ground, easing to the planet's
-  // normal blue toward space — not a flat wash across the whole limb. So
-  // twilightColor is blended in radially here, reusing the same `rim`
-  // shape already driving brightness (1 at the ground-hugging inner edge,
-  // 0 at the outer/space edge) — and *that* radial gradient is what fades
-  // in/out with the ground's own day/night angle (towardTwilight), rather
-  // than the angle picking the color directly. Ground still fully in
-  // daylight shows plain glowColor (towardTwilight = 0, so the radial
-  // gradient's own orange component never gets mixed in); past 92-95°,
-  // the same angle-based fade continues on into nightColor as before,
-  // uniformly (not radially — real deep-shadow limb photos aren't part of
-  // what this was checked against).
-  //
-  // antiSolarFactor (see its own comment on
-  // ATMOSPHERE_ANTI_SOLAR_SUPPRESSION_DOT) then suppresses towardTwilight
-  // specifically back toward 0 as the camera approaches exact anti-solar
-  // alignment, so a whole-limb "ring of simultaneous sunsets" renders as
-  // plain glowColor rather than a solid twilight-orange ring. towardNight
-  // is deliberately left alone: each point's own dimming/graying toward
-  // nightColor still applies normally even in that view, since unlike the
-  // orange tint, that part still reads as realistic.
+  // With a tuned night color (see PlanetAtmosphereData): same day/night
+  // split as untintedGlsl below, just landing on nightColor instead of a
+  // darkened glowColor. No separate twilight color/band — an earlier
+  // version of this shell shifted through a twilight tint in the 80-92°
+  // range, but that tint rides the same `rim` term as the day/night split
+  // itself, and near the poles of the visible limb (where the true
+  // silhouette and the terminator meet at a shallow angle) the twilight
+  // band's screen-space footprint stretches out along the limb — showing up
+  // as a bright, saturated smear bulging past the terminator specifically
+  // at the top/bottom of the disc. Simpler day-color/night-color-only
+  // mixing avoids that failure mode entirely.
   const tintedGlsl = `
-    float dayDot = dot(vNormal, normalize(sunDirection));
-    vec3 radialTwilightColor = mix(glowColor, twilightColor, rim);
-    float towardTwilight = 1.0 - smoothstep(${ATMOSPHERE_TWILIGHT_END_DOT}, ${ATMOSPHERE_TWILIGHT_START_DOT}, dayDot);
-    float towardNight = 1.0 - smoothstep(${ATMOSPHERE_TERMINATOR_FADE_DOT}, ${ATMOSPHERE_NIGHT_START_DOT}, dayDot);
-    float antiSolarSuppression = smoothstep(-1.0, ${ATMOSPHERE_ANTI_SOLAR_SUPPRESSION_DOT}, antiSolarFactor);
-    towardTwilight *= antiSolarSuppression;
-    vec3 dayOrTwilightColor = mix(glowColor, radialTwilightColor, towardTwilight);
-    vec3 finalColor = mix(dayOrTwilightColor, nightColor, towardNight);
-    float sunFactor = mix(1.0, 0.3, towardNight);
+    float daylight = smoothstep(${ATMOSPHERE_TERMINATOR_FADE_DOT}, 0.0, dot(vNormal, normalize(sunDirection)));
+    vec3 finalColor = mix(nightColor, glowColor, daylight);
+    float sunFactor = mix(0.3, 1.0, daylight);
     float glow = rim * sunFactor * intensity;
     gl_FragColor = vec4(finalColor, glow);
   `;
@@ -717,9 +648,7 @@ function Atmosphere({
         uniforms={{
           sunDirection: { value: new Vector3(0, 0, 1) },
           glowColor: { value: glowColor },
-          ...(hasTint
-            ? { twilightColor: { value: twilightColor }, nightColor: { value: nightColor }, antiSolarFactor: { value: 0 } }
-            : {}),
+          ...(hasTint ? { nightColor: { value: nightColor } } : {}),
           intensity: { value: intensity },
         }}
         vertexShader={`
@@ -737,7 +666,7 @@ function Atmosphere({
           varying vec3 vWorldPosition;
           uniform vec3 sunDirection;
           uniform vec3 glowColor;
-          ${hasTint ? "uniform vec3 twilightColor;\nuniform vec3 nightColor;\nuniform float antiSolarFactor;" : ""}
+          ${hasTint ? "uniform vec3 nightColor;" : ""}
           uniform float intensity;
           void main() {
             ${rimGlsl}

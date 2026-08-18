@@ -105,15 +105,15 @@ export type PlanetAtmosphereData = {
   // would otherwise blow the glow out to solid white, and Mars's real
   // 0.0063x would otherwise be indistinguishable from nothing.
   relativeSurfacePressure: number;
-  // Tint the Atmosphere shell shifts toward in the 90-95° twilight band
-  // (real sunset color — Rayleigh scattering strips blue out of a light
-  // path grazing the atmosphere edge-on) and past 95° (night side, as seen
-  // from space). Both are genuinely composition-dependent per atmosphere,
-  // not derived from color/scaleHeightKm/relativeSurfacePressure above, and
-  // both are optional: Scene.tsx falls back to a muted default for any
-  // planet without its own tuned value here, rather than asserting an
-  // unverified color for atmospheres this hasn't been reasoned through for.
-  twilightColor?: string;
+  // Tint the Atmosphere shell shifts toward on the night side, as seen from
+  // space (genuinely dark blue at ground level for Earth; this gray is a
+  // conservative guess at how that reads without an atmosphere lit from
+  // below by scattered ground/city light the way the real ground-level sky
+  // is). Composition-dependent per atmosphere, not derived from
+  // color/scaleHeightKm/relativeSurfacePressure above, and optional:
+  // Scene.tsx falls back to a muted default for any planet without its own
+  // tuned value here, rather than asserting an unverified color for
+  // atmospheres this hasn't been reasoned through for.
   nightColor?: string;
 };
 
@@ -309,13 +309,6 @@ export const PLANETS: PlanetData[] = [
       color: "#7ec8ff",
       scaleHeightKm: 8.5,
       relativeSurfacePressure: 1,
-      // Real color of the sky at sunset (dark orange/red — Rayleigh
-      // scattering strips blue out of the now edge-on light path) and, more
-      // speculatively, the night side as seen from orbit (genuinely dark
-      // blue at ground level; this gray is a conservative guess at how that
-      // reads without an atmosphere lit from below by scattered ground/city
-      // light the way the real ground-level sky is).
-      twilightColor: "#8b6242",
       nightColor: "#5d7c9a",
     },
   },
