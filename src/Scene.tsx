@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useMemo, useRef } from "react";
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Billboard, Html, Line, useTexture } from "@react-three/drei";
 import { AdditiveBlending, BackSide, BufferAttribute, Color, DoubleSide, Euler, MathUtils, Quaternion, RingGeometry, ShaderMaterial, SRGBColorSpace, Vector3, RepeatWrapping, ClampToEdgeWrapping } from "three";
@@ -10,16 +10,18 @@ import {
   ATMOSPHERE_HEIGHT_EXAGGERATION,
   ATMOSPHERE_MAX_INTENSITY,
   ATMOSPHERE_MIN_INTENSITY,
+  EARTH_MOON_DATA,
   GM_SUN_SCALED,
   KM_TO_UNITS,
   MIN_VIEW_MULTIPLIER,
+  MOON_RELIEF_KM,
   PLACEHOLDER_SIZE,
   PLANETS,
   SUN_DATA,
   SUN_RADIUS,
   VIEW_MULTIPLIER,
 } from "./astronomy";
-import type { PlanetAtmosphereData, PlanetRingData, PlanetTextures } from "./astronomy";
+import type { MoonData, PlanetAtmosphereData, PlanetRingData, PlanetTextures } from "./astronomy";
 import { simulation } from "./simulation";
 import { FRAME_PRIORITY } from "./framePriority";
 
@@ -175,6 +177,10 @@ function polePositionWorld(poleRaDegrees: number, poleDecDegrees: number): Vecto
 }
 
 const NORTH_POLE_AXIS = new Vector3(0, 1, 0);
+// The Moon's tidal-lock reference axis (see the Moon component) — the local
+// axis its texture's prime meridian lands on at zero rotation, same
+// convention as every Planet's own spin (see Planet's spinAngle comment).
+const LOCAL_X_AXIS = new Vector3(1, 0, 0);
 
 // Shared by the atmosphere shell (Atmosphere) and the surface rim glow
 // (TexturedSurface) so both derive "how strong does this planet's glow
@@ -701,6 +707,14 @@ type PlanetProps = {
   showPlaceholder: boolean;
   showLabel: boolean;
   onFocus: OnFocus;
+  // A body in orbit around this planet (currently only ever the Moon,
+  // around Earth) — rendered as a literal child of this planet's own
+  // <group> below, so Three's own transform hierarchy carries it along for
+  // free as this planet moves (that group only ever translates, same
+  // invariant localSunDirection already relies on), with no manual
+  // position-adding or frame-ordering dependency on this planet's own
+  // per-frame update needed.
+  children?: ReactNode;
 };
 
 function Planet({
@@ -726,6 +740,7 @@ function Planet({
   showPlaceholder,
   showLabel,
   onFocus,
+  children,
 }: PlanetProps) {
   const group = useRef<Group>(null);
   const mesh = useRef<Mesh>(null);
@@ -995,6 +1010,228 @@ function Planet({
           />
         ) : null}
         {showLabel ? <BodyLabel id={id} selected={selected} /> : null}
+        {children}
+      </group>
+    </>
+  );
+}
+
+// The Moon's surface material — split out for the same reason TexturedSurface
+// is: useTexture() should only suspend this material, not the whole Moon.
+// Much simpler than TexturedSurface, since the Moon needs neither a
+// night-lights emissive pass nor an atmosphere rim term — Phong's own
+// built-in lighting against the scene's sunlight already produces a correct
+// terminator for free. displacementMap/displacementScale give it real (if
+// approximate — see MOON_RELIEF_KM) surface relief, which no other body in
+// this app uses since none of their placeholder-vs-mesh viewing distances
+// make it worth the extra geometry cost.
+function MoonSurface({
+  textures,
+  displacementScale,
+  displacementBias,
+}: {
+  textures: MoonData["textures"];
+  displacementScale: number;
+  displacementBias: number;
+}) {
+  const maps = useTexture(textures);
+  const mapsRef = useRef(maps);
+  useEffect(() => {
+    mapsRef.current.map.colorSpace = SRGBColorSpace;
+    mapsRef.current.map.needsUpdate = true;
+  }, [maps]);
+
+  return (
+    <meshPhongMaterial
+      map={maps.map}
+      displacementMap={maps.displacementMap}
+      displacementScale={displacementScale}
+      displacementBias={displacementBias}
+      specular="#111111"
+      shininess={2}
+    />
+  );
+}
+
+// Deliberately not a generalized "orbiting body" component — see
+// astronomy.ts's own comment on why this is scoped to Earth's Moon
+// specifically. Structurally similar to Planet (same Kepler solver, same
+// tiltOrbitalPosition, same LOD/label/selection boilerplate) but with two
+// real differences: its position is Earth-relative (a literal Three.js
+// child of Earth's own <group> — see Planet's own children prop — rather
+// than sun-relative), and its orientation is real tidal lock (derived each
+// frame from its own current orbital geometry) rather than an independent
+// spin driven by rotationPeriodDays/poleRaDegrees/poleDecDegrees like every
+// Planet.
+function Moon({
+  moon,
+  selected,
+  showOrbit,
+  showPlaceholder,
+  showLabel,
+  onFocus,
+}: {
+  moon: MoonData;
+  selected: boolean;
+  showOrbit: boolean;
+  showPlaceholder: boolean;
+  showLabel: boolean;
+  onFocus: OnFocus;
+}) {
+  const group = useRef<Group>(null);
+  const mesh = useRef<Mesh>(null);
+  const placeholder = useRef<Mesh>(null);
+  const selectionRing = useRef<Mesh>(null);
+  const spinQuaternion = useRef(new Quaternion());
+  const towardEarthScratch = useRef(new Vector3());
+  // Scratch for the LOD distance check below — group.current.position is
+  // this mesh's position *relative to Earth's group* (its literal Three.js
+  // parent), not world space, so unlike Planet's own equivalent check this
+  // needs the real (parent-composed) world position instead.
+  const worldPositionScratch = useRef(new Vector3());
+
+  const radius = moon.radiusKm * KM_TO_UNITS;
+  const semiMajorAxis = moon.semiMajorAxisKm * KM_TO_UNITS;
+  const semiMinorAxis = semiMajorAxis * Math.sqrt(1 - moon.eccentricity ** 2);
+  const inclinationRadians = (moon.inclinationDegrees * Math.PI) / 180;
+  const switchDistance = radius / ANGULAR_THRESHOLD;
+  const displacementScale = MOON_RELIEF_KM * KM_TO_UNITS;
+
+  // Static snapshot of the orbit ellipse for the trace line, using the node/
+  // argument of periapsis at whatever moment this component mounts — both
+  // actually precess continuously (see astronomy.ts's own comment: 18.6yr/
+  // 8.85yr cycles), but redrawing this purely-visual guide every frame to
+  // track that isn't worth the cost; it'll go slightly stale over years of
+  // simulated time, same as every other approximation here. Earth-relative,
+  // like the Moon's own position — rendered as Earth's child too (below),
+  // so it rides along automatically.
+  const orbitPoints = useMemo(() => {
+    const daysSinceEpoch = simulation.time / 86_400;
+    const ascendingNodeRadians =
+      ((moon.ascendingNodeAtEpochDegrees + moon.ascendingNodeRatePerDay * daysSinceEpoch) * Math.PI) / 180;
+    const argumentOfPeriapsisRadians =
+      ((moon.argumentOfPeriapsisAtEpochDegrees + moon.argumentOfPeriapsisRatePerDay * daysSinceEpoch) * Math.PI) /
+      180;
+    const segments = 512;
+    return Array.from({ length: segments + 1 }, (_, i) => {
+      const E = (i / segments) * Math.PI * 2;
+      return tiltOrbitalPosition(
+        semiMajorAxis * (Math.cos(E) - moon.eccentricity),
+        semiMinorAxis * Math.sin(E),
+        argumentOfPeriapsisRadians,
+        inclinationRadians,
+        ascendingNodeRadians,
+      );
+    });
+  }, [moon, semiMajorAxis, semiMinorAxis, inclinationRadians]);
+
+  useFrame(() => {
+    if (!group.current) return;
+
+    const daysSinceEpoch = simulation.time / 86_400;
+    const twoPi = 2 * Math.PI;
+    const ascendingNodeRadians =
+      ((moon.ascendingNodeAtEpochDegrees + moon.ascendingNodeRatePerDay * daysSinceEpoch) * Math.PI) / 180;
+    const argumentOfPeriapsisRadians =
+      ((moon.argumentOfPeriapsisAtEpochDegrees + moon.argumentOfPeriapsisRatePerDay * daysSinceEpoch) * Math.PI) /
+      180;
+    const rawMeanAnomaly =
+      ((moon.meanAnomalyAtEpochDegrees + moon.meanAnomalyRatePerDay * daysSinceEpoch) * Math.PI) / 180;
+    const meanAnomaly = ((rawMeanAnomaly % twoPi) + twoPi) % twoPi;
+    const eccentricAnomaly = solveEccentricAnomaly(meanAnomaly, moon.eccentricity);
+
+    const [ox, oy, oz] = tiltOrbitalPosition(
+      semiMajorAxis * (Math.cos(eccentricAnomaly) - moon.eccentricity),
+      semiMinorAxis * Math.sin(eccentricAnomaly),
+      argumentOfPeriapsisRadians,
+      inclinationRadians,
+      ascendingNodeRadians,
+    );
+    // Earth-relative, and this *is* the final position: Earth's own group
+    // (this mesh's literal Three.js parent — see Planet's children prop)
+    // only ever translates, so Three's own transform composition adds
+    // Earth's position on top of this for free, correctly, regardless of
+    // frame-to-frame update ordering between Earth and the Moon.
+    group.current.position.set(ox, oy, oz);
+
+    if (mesh.current) {
+      // Real tidal lock: the same face always points at Earth, rather than
+      // spinning at an independent rate the way every Planet does — so the
+      // spin angle here comes from this frame's own orbital geometry (the
+      // direction back to Earth, i.e. -position in this group-local/
+      // Earth-relative space) instead of simulation.time directly. Only
+      // rotates about a fixed world +Y spin axis (assumes the Moon's real
+      // ~1.54° axial tilt is negligible, and ignores real optical
+      // libration) — see astronomy.ts's own MoonData comment.
+      towardEarthScratch.current.set(-ox, 0, -oz).normalize();
+      spinQuaternion.current.setFromUnitVectors(LOCAL_X_AXIS, towardEarthScratch.current);
+      mesh.current.quaternion.copy(spinQuaternion.current);
+    }
+  }, FRAME_PRIORITY.updatePosition);
+
+  useFrame((state) => {
+    if (!group.current) return;
+    group.current.getWorldPosition(worldPositionScratch.current);
+    const distance = state.camera.position.distanceTo(worldPositionScratch.current);
+    const closeEnough = distance < switchDistance;
+    const showReal = closeEnough || !showPlaceholder;
+    if (mesh.current) mesh.current.visible = showReal;
+    if (placeholder.current) {
+      placeholder.current.visible = !closeEnough && showPlaceholder;
+      placeholder.current.scale.setScalar(distance * PLACEHOLDER_SIZE);
+    }
+    if (selectionRing.current) {
+      selectionRing.current.visible = !closeEnough && showPlaceholder && selected;
+      selectionRing.current.scale.setScalar(distance * PLACEHOLDER_SIZE);
+    }
+  }, FRAME_PRIORITY.updateVisibility);
+
+  const handleFocus = (event: ThreeEvent<MouseEvent>) => {
+    event.stopPropagation();
+    if (group.current) onFocus(group.current, moon.id);
+  };
+
+  return (
+    <>
+      {showOrbit && (
+        <Line
+          points={orbitPoints}
+          color={moon.color}
+          transparent
+          opacity={selected ? 0.9 : 0.3}
+          linewidth={selected ? 2 : 1}
+        />
+      )}
+      <group
+        ref={(el) => {
+          group.current = el;
+          if (el) {
+            el.userData.focusDistance = radius * VIEW_MULTIPLIER;
+            el.userData.minViewDistance = radius * MIN_VIEW_MULTIPLIER;
+          }
+        }}
+      >
+        <mesh ref={mesh} onClick={handleFocus} {...hoverCursor}>
+          <sphereGeometry args={[radius, 100, 100]} />
+          <Suspense fallback={<meshStandardMaterial color={moon.color} roughness={0.9} metalness={0} />}>
+            <MoonSurface
+              textures={moon.textures}
+              displacementScale={displacementScale}
+              displacementBias={-displacementScale / 2}
+            />
+          </Suspense>
+        </mesh>
+        <Billboard>
+          <mesh ref={placeholder} onClick={handleFocus} {...hoverCursor}>
+            <circleGeometry args={[1, 24]} />
+            <meshBasicMaterial color={moon.color} depthTest={false} transparent opacity={0.85} />
+          </mesh>
+          <mesh ref={selectionRing}>
+            <ringGeometry args={[1.4, 1.7, 32]} />
+            <meshBasicMaterial color="#ffffff" depthTest={false} transparent opacity={0.9} />
+          </mesh>
+        </Billboard>
+        {showLabel ? <BodyLabel id={moon.id} selected={selected} /> : null}
       </group>
     </>
   );
@@ -1304,7 +1541,18 @@ export function Scene({
           showPlaceholder={showPlaceholders}
           showLabel={showLabels}
           onFocus={onFocus}
-        />
+        >
+          {planet.id === "earth" ? (
+            <Moon
+              moon={EARTH_MOON_DATA}
+              selected={selectedId === EARTH_MOON_DATA.id}
+              showOrbit={showOrbits}
+              showPlaceholder={showPlaceholders}
+              showLabel={showLabels}
+              onFocus={onFocus}
+            />
+          ) : null}
+        </Planet>
       ))}
     </>
   );

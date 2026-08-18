@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { KM_PER_AU, orbitalPeriodDays, PLANETS, SUN_DATA } from "./astronomy";
+import { EARTH_MOON_DATA, KM_PER_AU, orbitalPeriodDays, PLANETS, SUN_DATA } from "./astronomy";
 
 function capitalize(id: string) {
   return id[0].toUpperCase() + id.slice(1);
@@ -41,8 +41,9 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 export function StatsPanel({ selectedId }: { selectedId: string | null }) {
   const isSun = selectedId === SUN_DATA.id;
-  const planet = isSun ? undefined : PLANETS.find((p) => p.id === selectedId);
-  const body = isSun ? SUN_DATA : planet;
+  const isMoon = selectedId === EARTH_MOON_DATA.id;
+  const planet = isSun || isMoon ? undefined : PLANETS.find((p) => p.id === selectedId);
+  const body = isSun ? SUN_DATA : isMoon ? EARTH_MOON_DATA : planet;
   if (!body) return null;
 
   return (
@@ -86,7 +87,21 @@ export function StatsPanel({ selectedId }: { selectedId: string | null }) {
           <Stat label="Axial tilt" value={formatAxialTilt(planet.axialTiltDegrees)} />
         </>
       )}
-      {!planet && <Stat label="Type" value="Star" />}
+      {isMoon && (
+        <>
+          <Stat
+            label="Distance from Earth"
+            value={`${Math.round(EARTH_MOON_DATA.semiMajorAxisKm).toLocaleString()} km`}
+          />
+          <Stat label="Eccentricity" value={EARTH_MOON_DATA.eccentricity.toFixed(4)} />
+          <Stat
+            label="Orbital period"
+            value={formatPeriod(360 / EARTH_MOON_DATA.meanAnomalyRatePerDay)}
+          />
+          <Stat label="Rotation" value="Tidally locked" />
+        </>
+      )}
+      {isSun && <Stat label="Type" value="Star" />}
     </div>
   );
 }

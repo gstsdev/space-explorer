@@ -202,6 +202,79 @@ export const ATMOSPHERE_HEIGHT_EXAGGERATION = 12;
 export const ATMOSPHERE_MIN_INTENSITY = 0.35;
 export const ATMOSPHERE_MAX_INTENSITY = 1.5;
 
+// Deliberately scoped to Earth's Moon specifically, not a general "any body
+// can orbit any other body" moons system — there's exactly one real case to
+// support right now, and its own modeling needs (see below) are different
+// enough from a planet's that a shared abstraction would mean more
+// branching than the duplication it'd save. Worth revisiting if/when a
+// second moon shows up and shows what's actually common between two real
+// cases, rather than guessing now.
+//
+// The Moon's real orbit is geocentric (around Earth, not the sun) and,
+// unlike every planet's orbit above, its ascending node and argument of
+// periapsis aren't approximately fixed over human timescales: solar
+// perturbation regresses the node on an 18.6-year cycle and precesses the
+// perigee on an 8.85-year cycle, both fast enough that this app's real-time
+// clock (seeded from *today*, decades past J2000.0) would show a visibly
+// wrong orbital plane without modeling them. So unlike PlanetData's fixed
+// inclinationDegrees/ascendingNodeDegrees/argumentOfPeriapsisDegrees, this
+// carries an epoch value *and* a real secular rate (degrees/day) for each of
+// those two elements, evaluated the same "epoch + rate × time" way
+// PlanetData.rotationAtEpochDegrees already is for spin (see Scene.tsx's
+// Moon component). Real periodic perturbation terms on top of that secular
+// drift (evection, variation, the annual equation — collectively why the
+// real Moon's osculating elements wobble around these mean values on
+// ~week/month timescales) aren't modeled; expect roughly the same order of
+// position error as this app's least-precise planet (Uranus, ~6-8°).
+export type MoonData = {
+  id: string;
+  color: string;
+  radiusKm: number;
+  // Real osculating (i.e. exact instantaneous, not long-term-averaged)
+  // Earth-Moon distance-defining semi-major axis at J2000.0 — from JPL
+  // Horizons (geocentric, ecliptic-of-J2000 frame), for self-consistency
+  // with the other osculating elements below (all from the same query, same
+  // instant). The commonly-quoted "384,400 km" is the long-term mean; the
+  // real distance oscillates around it by roughly this much due to monthly
+  // solar perturbation (evection/variation), which this app doesn't model.
+  semiMajorAxisKm: number;
+  eccentricity: number;
+  inclinationDegrees: number;
+  ascendingNodeAtEpochDegrees: number;
+  ascendingNodeRatePerDay: number;
+  argumentOfPeriapsisAtEpochDegrees: number;
+  argumentOfPeriapsisRatePerDay: number;
+  meanAnomalyAtEpochDegrees: number;
+  // The real anomalistic mean motion — close to, but deliberately not
+  // taken directly from, the textbook 360°/27.554550-day anomalistic
+  // month (see EARTH_MOON_DATA's own comment for why a same-shaped error
+  // in argumentOfPeriapsisRatePerDay made "textbook period taken at face
+  // value" untrustworthy enough here to refit empirically instead).
+  // Deliberately *not* derived from a GM constant and semiMajorAxisKm via
+  // Kepler's third law the way every PlanetData's period is (see
+  // orbitalPeriodDays), either: that would need the *system's* combined
+  // mass (GM_EARTH + GM_MOON, not GM_EARTH alone) just to land on the
+  // right month length, and even then would only reproduce the orbit's
+  // unperturbed two-body rate, not the real (perturbed) one this rate
+  // reflects.
+  meanAnomalyRatePerDay: number;
+  textures: {
+    map: string;
+    displacementMap?: string;
+  };
+};
+
+// Real lunar topography spans roughly ±10 km from the mean radius (deepest
+// basin to highest peak, ~20 km total relief). Unlike the atmosphere
+// shell's deliberately exaggerated height (ATMOSPHERE_HEIGHT_EXAGGERATION),
+// this is applied at true scale via displacementMap/displacementScale in
+// Scene.tsx: real lunar relief is coarse enough to read even at true scale
+// once close enough to see the mesh at all. The sourced displacement
+// texture's own black/white-to-km calibration isn't independently verified
+// against real elevation data, so this is a reasonable real-magnitude
+// approximation, not a precisely calibrated one.
+export const MOON_RELIEF_KM = 20;
+
 export const SUN_DATA = {
   id: "sun",
   color: "#ffcc66",
@@ -443,3 +516,54 @@ export const PLANETS: PlanetData[] = [
     },
   },
 ];
+
+// Real values: radiusKm is the IAU-adopted mean lunar radius. Orbital
+// elements are JPL Horizons osculating elements at 2000-Jan-01 12:00 TDB
+// (COMMAND=301, CENTER=500@399, ecliptic-of-J2000 frame) — the same epoch
+// every PlanetData element above is anchored to.
+//
+// The three rates below are *not* the commonly-quoted textbook precession
+// periods (18.5996yr nodal, 8.8504yr apsidal, 27.554550-day anomalistic
+// month) applied directly — an earlier version of this data did that, and
+// it's wrong in a way that only shows up decades from J2000.0: the
+// "8.8504yr" figure is how fast the *longitude* of periapsis (Ω + ω,
+// measured in a space-fixed sense) precesses, not the argument of
+// periapsis ω alone — ω is measured from the ascending node, which is
+// itself regressing, so dω/dt is actually (longitude-of-periapsis rate) −
+// (node rate) ≈ 0.1114 − (−0.0530) ≈ 0.1644°/day, roughly 50% faster than
+// 0.1114°/day alone. That error compounds linearly with time; by 26+ years
+// past J2000.0 (this app's own "today" default — see secondsSinceJ2000)
+// it put the Moon's argument of periapsis nearly 190° off from real
+// Horizons data, i.e. roughly the wrong side of its orbit.
+//
+// Rather than re-derive the "correct" textbook rate by hand and risk the
+// same class of error again, these three rates are fit directly from real
+// JPL Horizons osculating elements at three dates spanning 2000-01-01
+// through today (2000-01-01 12:00 TDB, 2010-01-01 00:00 TDB, and
+// 2026-08-18 00:00 TDB) — (laterValue − earlierValue) / daysBetween, with
+// the number of full ±360° revolutions between samples resolved by
+// comparison against the textbook-period estimate (close enough over
+// these gaps to be unambiguous). This is real, empirically-fit secular
+// drift, correct at both ends of that 26-year span by construction; it
+// still doesn't capture the periodic (sub-cycle) perturbation wobble
+// real osculating elements have on top of the secular trend, which showed
+// up as a few degrees of residual at the 2010 midpoint when checked —
+// comparable to this app's least-precise planet (Uranus, ~6-8°).
+export const EARTH_MOON_DATA: MoonData = {
+  id: "moon",
+  color: "#bfbfbf",
+  radiusKm: 1737.4,
+  semiMajorAxisKm: 381_874.5,
+  eccentricity: 0.063147,
+  inclinationDegrees: 5.240273,
+  ascendingNodeAtEpochDegrees: 123.958055,
+  ascendingNodeRatePerDay: -0.052913,
+  argumentOfPeriapsisAtEpochDegrees: 308.922673,
+  argumentOfPeriapsisRatePerDay: 0.165551,
+  meanAnomalyAtEpochDegrees: 146.673275,
+  meanAnomalyRatePerDay: 13.063776,
+  textures: {
+    map: "/textures/earth/moon/map.jpg",
+    displacementMap: "/textures/earth/moon/displacement.jpg",
+  },
+};
