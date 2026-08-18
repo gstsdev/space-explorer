@@ -5,6 +5,7 @@ import { Billboard, Html, Line, useTexture } from "@react-three/drei";
 import { AdditiveBlending, BackSide, BufferAttribute, Color, DoubleSide, Euler, MathUtils, Quaternion, RingGeometry, ShaderMaterial, SRGBColorSpace, Vector3, RepeatWrapping, ClampToEdgeWrapping } from "three";
 import type { Group, Mesh, Object3D } from "three";
 import type { ThreeEvent } from "@react-three/fiber";
+import type { Line2, LineSegments2 } from "three-stdlib";
 import {
   ANGULAR_THRESHOLD,
   ATMOSPHERE_HEIGHT_EXAGGERATION,
@@ -182,6 +183,13 @@ const NORTH_POLE_AXIS = new Vector3(0, 1, 0);
 // convention as every Planet's own spin (see Planet's spinAngle comment).
 const LOCAL_X_AXIS = new Vector3(1, 0, 0);
 
+// See the Moon's own visibility useFrame for why this exists: each
+// placeholder has a fixed angular radius of PLACEHOLDER_SIZE (radians), so
+// two placeholders visually clear each other once their angular separation
+// exceeds roughly the sum of their radii — this adds some margin for the
+// larger selection ring around a selected body.
+const MOON_PLACEHOLDER_MIN_SEPARATION = 3 * PLACEHOLDER_SIZE;
+
 // Shared by the atmosphere shell (Atmosphere) and the surface rim glow
 // (TexturedSurface) so both derive "how strong does this planet's glow
 // read" from the same real relativeSurfacePressure value — see
@@ -238,9 +246,22 @@ function capitalize(id: string) {
 // parent group — Html reprojects every frame automatically, so this needs no
 // per-frame code of its own. Stays a fixed CSS pixel size regardless of
 // distance, like the placeholders, so it's always readable.
-function BodyLabel({ id, selected }: { id: string; selected: boolean }) {
+function BodyLabel({
+  id,
+  selected,
+  htmlRef,
+}: {
+  id: string;
+  selected: boolean;
+  // Optional: Html forwards its ref straight to the underlying
+  // HTMLDivElement (not a Three.js object), so a caller that needs to
+  // toggle this label's visibility outside of showLabel/selected — see the
+  // Moon's own use of this — can do it the same imperative, no-re-render
+  // way every other per-frame visibility toggle in this file already does.
+  htmlRef?: RefObject<HTMLDivElement | null>;
+}) {
   return (
-    <Html center style={{ pointerEvents: "none" }}>
+    <Html ref={htmlRef} center style={{ pointerEvents: "none" }}>
       <div
         style={{
           transform: "translateY(16px)",
@@ -949,6 +970,14 @@ function Planet({
   }, FRAME_PRIORITY.updateVisibility);
 
   const handleFocus = (event: ThreeEvent<MouseEvent>) => {
+    // Three.js's own raycasting never checks .visible (only render layers
+    // do — see intersect() in three's Raycaster.js), so an object hidden via
+    // the LOD/visibility useFrame above is still fully clickable underneath
+    // its own invisible geometry unless this checks explicitly. Bailing out
+    // without stopPropagation (rather than swallowing the event) lets R3F's
+    // own distance-ordered dispatch continue on to whatever's actually
+    // visible at this screen position instead.
+    if (!event.eventObject.visible) return;
     event.stopPropagation();
     if (group.current) onFocus(group.current, id);
   };
@@ -1082,7 +1111,15 @@ function Moon({
   const mesh = useRef<Mesh>(null);
   const placeholder = useRef<Mesh>(null);
   const selectionRing = useRef<Mesh>(null);
+  const orbitLine = useRef<Line2 | LineSegments2>(null);
   const spinQuaternion = useRef(new Quaternion());
+  // The label is a drei <Html> DOM overlay rather than a Three.js object, so
+  // there's no .visible to flip — but Html forwards its ref straight to the
+  // underlying HTMLDivElement (see BodyLabel's own htmlRef), so this can
+  // still be toggled the same imperative, no-re-render way as the
+  // placeholder/orbit line above, via style.display (the same property
+  // Html's own internal behind-camera check already uses).
+  const label = useRef<HTMLDivElement>(null);
   const towardEarthScratch = useRef(new Vector3());
   // Scratch for the LOD distance check below — group.current.position is
   // this mesh's position *relative to Earth's group* (its literal Three.js
@@ -1175,18 +1212,49 @@ function Moon({
     const distance = state.camera.position.distanceTo(worldPositionScratch.current);
     const closeEnough = distance < switchDistance;
     const showReal = closeEnough || !showPlaceholder;
+
+    // The real Earth-Moon separation (~384,000 km) is tiny next to
+    // interplanetary camera distances, so from far enough out the Moon's
+    // own placeholder — fixed angular size, like every placeholder, since
+    // its world scale tracks distance-to-camera exactly (see
+    // PLACEHOLDER_SIZE) — ends up sitting on top of Earth's own, blocking
+    // clicks on Earth. group.current.parent is Earth's own <group> (Moon is
+    // rendered as its literal child — see Planet's children prop), and its
+    // .position is already world-space, same assumption Planet's own code
+    // relies on throughout. Once the angular separation between Earth and
+    // the Moon (as seen from the camera) drops below roughly their combined
+    // on-screen size, hide the Moon's placeholder entirely rather than let
+    // it compete with Earth's for clicks — a UI/UX threshold, not a real
+    // astronomical one (unlike ANGULAR_THRESHOLD).
+    const parentDistance = group.current.parent
+      ? state.camera.position.distanceTo(group.current.parent.position)
+      : distance;
+    const currentlySeparated = semiMajorAxis / parentDistance > MOON_PLACEHOLDER_MIN_SEPARATION;
+
     if (mesh.current) mesh.current.visible = showReal;
     if (placeholder.current) {
-      placeholder.current.visible = !closeEnough && showPlaceholder;
+      placeholder.current.visible = !closeEnough && showPlaceholder && currentlySeparated;
       placeholder.current.scale.setScalar(distance * PLACEHOLDER_SIZE);
     }
     if (selectionRing.current) {
-      selectionRing.current.visible = !closeEnough && showPlaceholder && selected;
+      selectionRing.current.visible = !closeEnough && showPlaceholder && selected && currentlySeparated;
       selectionRing.current.scale.setScalar(distance * PLACEHOLDER_SIZE);
     }
+    // Same reasoning as the placeholder above: the orbit ellipse itself is
+    // only ~384,000 km across, so from far enough out it's a meaningless
+    // smudge right on top of Earth rather than a readable path — and same
+    // for the label (see the label ref's own comment for why this is a
+    // style.display write instead of a .visible one).
+    if (orbitLine.current) orbitLine.current.visible = currentlySeparated;
+    if (label.current) label.current.style.display = currentlySeparated ? "" : "none";
   }, FRAME_PRIORITY.updateVisibility);
 
   const handleFocus = (event: ThreeEvent<MouseEvent>) => {
+    // See Planet's own handleFocus for why this check exists: .visible
+    // doesn't stop raycasting, so this mesh/placeholder stays clickable even
+    // while hidden (e.g. by the separatedFromEarth check above) unless this
+    // bails out and lets the click fall through to Earth instead.
+    if (!event.eventObject.visible) return;
     event.stopPropagation();
     if (group.current) onFocus(group.current, moon.id);
   };
@@ -1195,6 +1263,7 @@ function Moon({
     <>
       {showOrbit && (
         <Line
+          ref={orbitLine}
           points={orbitPoints}
           color={moon.color}
           transparent
@@ -1231,7 +1300,7 @@ function Moon({
             <meshBasicMaterial color="#ffffff" depthTest={false} transparent opacity={0.9} />
           </mesh>
         </Billboard>
-        {showLabel ? <BodyLabel id={moon.id} selected={selected} /> : null}
+        {showLabel ? <BodyLabel id={moon.id} selected={selected} htmlRef={label} /> : null}
       </group>
     </>
   );
@@ -1443,6 +1512,10 @@ function Sun({
   }, FRAME_PRIORITY.updateVisibility);
 
   const handleFocus = (event: ThreeEvent<MouseEvent>) => {
+    // See Planet's own handleFocus for why this check exists — also covers
+    // SunGlare's own occlusion-driven .visible (a real transit shouldn't be
+    // clickable through the planet blocking it).
+    if (!event.eventObject.visible) return;
     event.stopPropagation();
     if (group.current) onFocus(group.current, SUN_DATA.id);
   };
