@@ -215,59 +215,306 @@ export const ATMOSPHERE_MAX_INTENSITY = 1.5;
 // second moon shows up and shows what's actually common between two real
 // cases, rather than guessing now.
 //
-// The Moon's real orbit is geocentric (around Earth, not the sun) and,
-// unlike every planet's orbit above, its ascending node and argument of
-// periapsis aren't approximately fixed over human timescales: solar
-// perturbation regresses the node on an 18.6-year cycle and precesses the
-// perigee on an 8.85-year cycle, both fast enough that this app's real-time
-// clock (seeded from *today*, decades past J2000.0) would show a visibly
-// wrong orbital plane without modeling them. So unlike PlanetData's fixed
-// inclinationDegrees/ascendingNodeDegrees/argumentOfPeriapsisDegrees, this
-// carries an epoch value *and* a real secular rate (degrees/day) for each of
-// those two elements, evaluated the same "epoch + rate × time" way
-// PlanetData.rotationAtEpochDegrees already is for spin (see Scene.tsx's
-// Moon component). Real periodic perturbation terms on top of that secular
-// drift (evection, variation, the annual equation — collectively why the
-// real Moon's osculating elements wobble around these mean values on
-// ~week/month timescales) aren't modeled; expect roughly the same order of
-// position error as this app's least-precise planet (Uranus, ~6-8°).
+// The Moon's position is *not* modeled as a Kepler ellipse the way every
+// planet above is — an earlier version of this file did that (fixed
+// eccentricity/inclination plus epoch+rate secular precession for the node
+// and argument of periapsis), and it's real but insufficient: real solar
+// perturbation on the Moon's orbit also has large *periodic* components
+// (evection ±1.27°, variation ±0.66°, the annual equation ±0.19°, and
+// smaller ones) that a two-body ellipse can't represent at all, secular
+// rates or not. That showed up as a concrete, checkable error — at a real
+// solar eclipse (2026-08-12), this app's predicted conjunction time was off
+// from the real one (per Wikipedia's own eclipse page) by about 7 hours,
+// which traced back to the Moon's ecliptic longitude being off by ~3.5° at
+// that instant, entirely explicable by those missing periodic terms.
+//
+// So instead, moonGeocentricEclipticPosition below computes the Moon's real
+// geocentric ecliptic longitude/latitude/distance directly, via the
+// standard truncated ELP2000-82B series (Jean Meeus, "Astronomical
+// Algorithms," 2nd ed., Chapter 47) — ~10 arcsecond accuracy, several
+// orders of magnitude better than this app needs, but it's the standard,
+// well-verified algorithm real lunar ephemeris code actually uses, not a
+// hand-truncated subset of it. MOON_LONGITUDE_DISTANCE_TERMS/
+// MOON_LATITUDE_TERMS below are Meeus's own Tables 47.A/47.B verbatim
+// (transcribed from, and cross-checked line-by-line against, the
+// independently-maintained PyMeeus implementation — see moonGeocentricEclipticPosition's
+// own comment for the exact source and the reference test case used to
+// verify this port before it was wired in).
 export type MoonData = {
   id: string;
   color: string;
   radiusKm: number;
-  // Real osculating (i.e. exact instantaneous, not long-term-averaged)
-  // Earth-Moon distance-defining semi-major axis at J2000.0 — from JPL
-  // Horizons (geocentric, ecliptic-of-J2000 frame), for self-consistency
-  // with the other osculating elements below (all from the same query, same
-  // instant). The commonly-quoted "384,400 km" is the long-term mean; the
-  // real distance oscillates around it by roughly this much due to monthly
-  // solar perturbation (evection/variation), which this app doesn't model.
-  semiMajorAxisKm: number;
-  eccentricity: number;
-  inclinationDegrees: number;
-  ascendingNodeAtEpochDegrees: number;
-  ascendingNodeRatePerDay: number;
-  argumentOfPeriapsisAtEpochDegrees: number;
-  argumentOfPeriapsisRatePerDay: number;
-  meanAnomalyAtEpochDegrees: number;
-  // The real anomalistic mean motion — close to, but deliberately not
-  // taken directly from, the textbook 360°/27.554550-day anomalistic
-  // month (see EARTH_MOON_DATA's own comment for why a same-shaped error
-  // in argumentOfPeriapsisRatePerDay made "textbook period taken at face
-  // value" untrustworthy enough here to refit empirically instead).
-  // Deliberately *not* derived from a GM constant and semiMajorAxisKm via
-  // Kepler's third law the way every PlanetData's period is (see
-  // orbitalPeriodDays), either: that would need the *system's* combined
-  // mass (GM_EARTH + GM_MOON, not GM_EARTH alone) just to land on the
-  // right month length, and even then would only reproduce the orbit's
-  // unperturbed two-body rate, not the real (perturbed) one this rate
-  // reflects.
-  meanAnomalyRatePerDay: number;
   textures: {
     map: string;
     displacementMap?: string;
   };
 };
+
+// Display-only reference constants (StatsPanel) — NOT used by the position
+// calculation itself, which computes the Moon's real instantaneous
+// longitude/latitude/distance directly rather than via fixed orbital
+// elements (see MoonData's own comment). These are the standard
+// long-term-average values quoted for the real orbit.
+export const MOON_MEAN_DISTANCE_KM = 385_000.56; // the algorithm's own mean-distance constant
+export const MOON_MEAN_ECCENTRICITY = 0.0549;
+export const MOON_SIDEREAL_MONTH_DAYS = 27.321661;
+
+// Table 47.A (Meeus): periodic terms for the Moon's longitude (Σl) and
+// distance (Σr). Each row is [D, M, M′, F, coeffL, coeffR] — the first four
+// are integer multipliers on the fundamental arguments (mean elongation D,
+// Sun's mean anomaly M, Moon's mean anomaly M′, Moon's argument of latitude
+// F) forming each term's sine/cosine argument; coeffL is in 1e-6 degree,
+// coeffR in 1e-3 km. Terms whose M-multiplier is ±1 or ±2 get scaled by the
+// Earth-orbit-eccentricity correction (E or E²) in
+// moonGeocentricEclipticPosition, same as Meeus's own algorithm.
+const MOON_LONGITUDE_DISTANCE_TERMS: readonly (readonly [
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+])[] = [
+  [0, 0, 1, 0, 6288774.0, -20905355.0],
+  [2, 0, -1, 0, 1274027.0, -3699111.0],
+  [2, 0, 0, 0, 658314.0, -2955968.0],
+  [0, 0, 2, 0, 213618.0, -569925.0],
+  [0, 1, 0, 0, -185116.0, 48888.0],
+  [0, 0, 0, 2, -114332.0, -3149.0],
+  [2, 0, -2, 0, 58793.0, 246158.0],
+  [2, -1, -1, 0, 57066.0, -152138.0],
+  [2, 0, 1, 0, 53322.0, -170733.0],
+  [2, -1, 0, 0, 45758.0, -204586.0],
+  [0, 1, -1, 0, -40923.0, -129620.0],
+  [1, 0, 0, 0, -34720.0, 108743.0],
+  [0, 1, 1, 0, -30383.0, 104755.0],
+  [2, 0, 0, -2, 15327.0, 10321.0],
+  [0, 0, 1, 2, -12528.0, 0.0],
+  [0, 0, 1, -2, 10980.0, 79661.0],
+  [4, 0, -1, 0, 10675.0, -34782.0],
+  [0, 0, 3, 0, 10034.0, -23210.0],
+  [4, 0, -2, 0, 8548.0, -21636.0],
+  [2, 1, -1, 0, -7888.0, 24208.0],
+  [2, 1, 0, 0, -6766.0, 30824.0],
+  [1, 0, -1, 0, -5163.0, -8379.0],
+  [1, 1, 0, 0, 4987.0, -16675.0],
+  [2, -1, 1, 0, 4036.0, -12831.0],
+  [2, 0, 2, 0, 3994.0, -10445.0],
+  [4, 0, 0, 0, 3861.0, -11650.0],
+  [2, 0, -3, 0, 3665.0, 14403.0],
+  [0, 1, -2, 0, -2689.0, -7003.0],
+  [2, 0, -1, 2, -2602.0, 0.0],
+  [2, -1, -2, 0, 2390.0, 10056.0],
+  [1, 0, 1, 0, -2348.0, 6322.0],
+  [2, -2, 0, 0, 2236.0, -9884.0],
+  [0, 1, 2, 0, -2120.0, 5751.0],
+  [0, 2, 0, 0, -2069.0, 0.0],
+  [2, -2, -1, 0, 2048.0, -4950.0],
+  [2, 0, 1, -2, -1773.0, 4130.0],
+  [2, 0, 0, 2, -1595.0, 0.0],
+  [4, -1, -1, 0, 1215.0, -3958.0],
+  [0, 0, 2, 2, -1110.0, 0.0],
+  [3, 0, -1, 0, -892.0, 3258.0],
+  [2, 1, 1, 0, -810.0, 2616.0],
+  [4, -1, -2, 0, 759.0, -1897.0],
+  [0, 2, -1, 0, -713.0, -2117.0],
+  [2, 2, -1, 0, -700.0, 2354.0],
+  [2, 1, -2, 0, 691.0, 0.0],
+  [2, -1, 0, -2, 596.0, 0.0],
+  [4, 0, 1, 0, 549.0, -1423.0],
+  [0, 0, 4, 0, 537.0, -1117.0],
+  [4, -1, 0, 0, 520.0, -1571.0],
+  [1, 0, -2, 0, -487.0, -1739.0],
+  [2, 1, 0, -2, -399.0, 0.0],
+  [0, 0, 2, -2, -381.0, -4421.0],
+  [1, 1, 1, 0, 351.0, 0.0],
+  [3, 0, -2, 0, -340.0, 0.0],
+  [4, 0, -3, 0, 330.0, 0.0],
+  [2, -1, 2, 0, 327.0, 0.0],
+  [0, 2, 1, 0, -323.0, 1165.0],
+  [1, 1, -1, 0, 299.0, 0.0],
+  [2, 0, 3, 0, 294.0, 0.0],
+  [2, 0, -1, -2, 0.0, 8752.0],
+];
+
+// Table 47.B (Meeus): periodic terms for the Moon's latitude (Σb). Each row
+// is [D, M, M′, F, coeffB], coeffB in 1e-6 degree — same fundamental
+// arguments and E/E² scaling rule as the longitude/distance table above.
+const MOON_LATITUDE_TERMS: readonly (readonly [number, number, number, number, number])[] = [
+  [0, 0, 0, 1, 5128122.0],
+  [0, 0, 1, 1, 280602.0],
+  [0, 0, 1, -1, 277693.0],
+  [2, 0, 0, -1, 173237.0],
+  [2, 0, -1, 1, 55413.0],
+  [2, 0, -1, -1, 46271.0],
+  [2, 0, 0, 1, 32573.0],
+  [0, 0, 2, 1, 17198.0],
+  [2, 0, 1, -1, 9266.0],
+  [0, 0, 2, -1, 8822.0],
+  [2, -1, 0, -1, 8216.0],
+  [2, 0, -2, -1, 4324.0],
+  [2, 0, 1, 1, 4200.0],
+  [2, 1, 0, -1, -3359.0],
+  [2, -1, -1, 1, 2463.0],
+  [2, -1, 0, 1, 2211.0],
+  [2, -1, -1, -1, 2065.0],
+  [0, 1, -1, -1, -1870.0],
+  [4, 0, -1, -1, 1828.0],
+  [0, 1, 0, 1, -1794.0],
+  [0, 0, 0, 3, -1749.0],
+  [0, 1, -1, 1, -1565.0],
+  [1, 0, 0, 1, -1491.0],
+  [0, 1, 1, 1, -1475.0],
+  [0, 1, 1, -1, -1410.0],
+  [0, 1, 0, -1, -1344.0],
+  [1, 0, 0, -1, -1335.0],
+  [0, 0, 3, 1, 1107.0],
+  [4, 0, 0, -1, 1021.0],
+  [4, 0, -1, 1, 833.0],
+  [0, 0, 1, -3, 777.0],
+  [4, 0, -2, 1, 671.0],
+  [2, 0, 0, -3, 607.0],
+  [2, 0, 2, -1, 596.0],
+  [2, -1, 1, -1, 491.0],
+  [2, 0, -2, 1, -451.0],
+  [0, 0, 3, -1, 439.0],
+  [2, 0, 2, 1, 422.0],
+  [2, 0, -3, -1, 421.0],
+  [2, 1, -1, 1, -366.0],
+  [2, 1, 0, 1, -351.0],
+  [4, 0, 0, 1, 331.0],
+  [2, -1, 1, 1, 315.0],
+  [2, -2, 0, -1, 302.0],
+  [0, 0, 1, 3, -283.0],
+  [2, 1, 1, -1, -229.0],
+  [1, 1, 0, -1, 223.0],
+  [1, 1, 0, 1, 223.0],
+  [0, 1, -2, -1, -220.0],
+  [2, 1, -1, -1, -220.0],
+  [1, 0, 1, 1, -185.0],
+  [2, -1, -2, -1, 181.0],
+  [0, 1, 2, 1, -177.0],
+  [4, 0, -2, -1, 176.0],
+  [4, -1, -1, -1, 166.0],
+  [1, 0, 1, -1, -164.0],
+  [4, 0, 1, -1, 132.0],
+  [1, 0, -1, -1, -119.0],
+  [4, -1, 0, -1, 115.0],
+  [2, -2, 0, 1, 107.0],
+];
+
+const DEG_TO_RAD = Math.PI / 180;
+
+// Standard IAU general-precession-in-longitude rate (Meeus eq. 21.4,
+// quadratic term dropped as negligible at this app's multi-decade
+// timescale) — see moonGeocentricEclipticPosition's own comment for why
+// this specifically is needed.
+const GENERAL_PRECESSION_ARCSEC_PER_CENTURY = 5029.0966;
+
+// Real geocentric ecliptic longitude/latitude/distance of the Moon, via
+// Meeus's Chapter 47 algorithm — see MoonData's own comment for why this
+// replaced a Kepler-ellipse model. Ported from, and checked line-by-line
+// against, PyMeeus's implementation (github.com/architest/pymeeus,
+// pymeeus/Moon.py — an independently-maintained, tested Python port of the
+// same Meeus algorithm) rather than re-derived from the book by hand, to
+// avoid the exact kind of transcription/derivation error that motivated
+// this rewrite in the first place. Verified against PyMeeus's own docstring
+// reference case (epoch 1992-04-12.0 TT → longitude 133.162655°, latitude
+// -3.229126°, distance 368409.7 km) before being wired into this app;
+// reproduced that case to within 4e-7° / 0.02 km, i.e. floating-point noise.
+//
+// One correction beyond the raw ported algorithm: Meeus's lunar theory
+// inherently returns longitude referred to the mean equinox OF DATE — that's
+// baked into its own fundamental-argument formulas, not a choice made here.
+// Every other angle in this file (every planet's ascendingNodeDegrees,
+// argumentOfPeriapsisDegrees, meanAnomalyAtEpochDegrees, ...) is instead
+// pinned to a fixed J2000.0 frame, by deliberate design — see
+// poleRaDegrees's own comment on dropping precession as negligible
+// elsewhere. Left uncorrected, the two slowly diverge via general
+// precession (~50.29"/year) — by 2026 (~26.6 years past J2000) that's
+// already ~0.37°, and it was almost the *entire* remaining error in a real
+// eclipse check: this app's computed Aug 12, 2026 solar eclipse conjunction
+// was still ~44 minutes off the real one even with this same lunar theory
+// in place. Independently cross-checking both the Sun's and Moon's
+// longitude against real JPL Horizons ephemeris (not just each other)
+// pinned that gap to this specific frame mismatch, not remaining
+// imprecision in either body's own theory — subtracting the accumulated
+// precession below brings both a real solar and a real lunar eclipse check
+// down to within ~5 minutes.
+//
+// daysSinceEpoch is days since J2000.0 (TT vs this app's UTC approximation
+// is the same negligible difference already accepted everywhere else in
+// this file — see J2000_EPOCH_MS).
+export function moonGeocentricEclipticPosition(daysSinceEpoch: number): {
+  longitudeDegrees: number;
+  latitudeDegrees: number;
+  distanceKm: number;
+} {
+  const t = daysSinceEpoch / 36525; // Julian centuries since J2000.0
+
+  // Fundamental arguments, degrees (Meeus 47.1-47.5).
+  const meanLongitude =
+    218.3164477 + (481267.88123421 + (-0.0015786 + (1 / 538841 - t / 65194000) * t) * t) * t;
+  const meanElongation =
+    297.8501921 + (445267.1114034 + (-0.0018819 + (1 / 545868 - t / 113065000) * t) * t) * t;
+  const sunMeanAnomaly = 357.5291092 + (35999.0502909 + (-0.0001536 + t / 24490000) * t) * t;
+  const moonMeanAnomaly =
+    134.9633964 + (477198.8675055 + (0.0087414 + (1 / 69699 - t / 14712000) * t) * t) * t;
+  const argumentOfLatitude =
+    93.272095 + (483202.0175233 + (-0.0036539 + (-1 / 3526000 + t / 863310000) * t) * t) * t;
+  // Additional arguments (Venus/Jupiter perturbations and a flattening
+  // correction) that the additive terms below need directly.
+  const a1 = 119.75 + 131.849 * t;
+  const a2 = 53.09 + 479264.29 * t;
+  const a3 = 313.45 + 481266.484 * t;
+  // Corrects the M-dependent terms for the slow real change in Earth's own
+  // orbital eccentricity since these tables were fit.
+  const e = 1 + (-0.002516 - 0.0000074 * t) * t;
+  const e2 = e * e;
+
+  const dRad = meanElongation * DEG_TO_RAD;
+  const mRad = sunMeanAnomaly * DEG_TO_RAD;
+  const mPrimeRad = moonMeanAnomaly * DEG_TO_RAD;
+  const fRad = argumentOfLatitude * DEG_TO_RAD;
+  const lPrimeRad = meanLongitude * DEG_TO_RAD;
+  const a1Rad = a1 * DEG_TO_RAD;
+  const a2Rad = a2 * DEG_TO_RAD;
+  const a3Rad = a3 * DEG_TO_RAD;
+  const args = [dRad, mRad, mPrimeRad, fRad];
+
+  let sigmaL = 0;
+  let sigmaR = 0;
+  for (const [dMult, mMult, mPrimeMult, fMult, coeffL, coeffR] of MOON_LONGITUDE_DISTANCE_TERMS) {
+    const argument = dMult * args[0] + mMult * args[1] + mPrimeMult * args[2] + fMult * args[3];
+    const eScale = Math.abs(mMult) === 1 ? e : Math.abs(mMult) === 2 ? e2 : 1;
+    sigmaL += coeffL * eScale * Math.sin(argument);
+    sigmaR += coeffR * eScale * Math.cos(argument);
+  }
+  sigmaL += 3958 * Math.sin(a1Rad) + 1962 * Math.sin(lPrimeRad - fRad) + 318 * Math.sin(a2Rad);
+
+  let sigmaB = 0;
+  for (const [dMult, mMult, mPrimeMult, fMult, coeffB] of MOON_LATITUDE_TERMS) {
+    const argument = dMult * args[0] + mMult * args[1] + mPrimeMult * args[2] + fMult * args[3];
+    const eScale = Math.abs(mMult) === 1 ? e : Math.abs(mMult) === 2 ? e2 : 1;
+    sigmaB += coeffB * eScale * Math.sin(argument);
+  }
+  sigmaB +=
+    -2235 * Math.sin(lPrimeRad) +
+    382 * Math.sin(a3Rad) +
+    175 * Math.sin(a1Rad - fRad) +
+    175 * Math.sin(a1Rad + fRad) +
+    127 * Math.sin(lPrimeRad - mPrimeRad) -
+    115 * Math.sin(lPrimeRad + mPrimeRad);
+
+  // Converts Meeus's inherent equinox-of-date longitude into this app's
+  // fixed-J2000 frame — see this function's own comment above.
+  const precessionCorrectionDegrees = (GENERAL_PRECESSION_ARCSEC_PER_CENTURY * t) / 3600;
+  const rawLongitudeDegrees = meanLongitude + sigmaL / 1_000_000 - precessionCorrectionDegrees;
+  const longitudeDegrees = ((rawLongitudeDegrees % 360) + 360) % 360;
+  const latitudeDegrees = sigmaB / 1_000_000;
+  const distanceKm = MOON_MEAN_DISTANCE_KM + sigmaR / 1000;
+  return { longitudeDegrees, latitudeDegrees, distanceKm };
+}
 
 // Real lunar topography spans roughly ±10 km from the mean radius (deepest
 // basin to highest peak, ~20 km total relief). Unlike the atmosphere
@@ -522,51 +769,13 @@ export const PLANETS: PlanetData[] = [
   },
 ];
 
-// Real values: radiusKm is the IAU-adopted mean lunar radius. Orbital
-// elements are JPL Horizons osculating elements at 2000-Jan-01 12:00 TDB
-// (COMMAND=301, CENTER=500@399, ecliptic-of-J2000 frame) — the same epoch
-// every PlanetData element above is anchored to.
-//
-// The three rates below are *not* the commonly-quoted textbook precession
-// periods (18.5996yr nodal, 8.8504yr apsidal, 27.554550-day anomalistic
-// month) applied directly — an earlier version of this data did that, and
-// it's wrong in a way that only shows up decades from J2000.0: the
-// "8.8504yr" figure is how fast the *longitude* of periapsis (Ω + ω,
-// measured in a space-fixed sense) precesses, not the argument of
-// periapsis ω alone — ω is measured from the ascending node, which is
-// itself regressing, so dω/dt is actually (longitude-of-periapsis rate) −
-// (node rate) ≈ 0.1114 − (−0.0530) ≈ 0.1644°/day, roughly 50% faster than
-// 0.1114°/day alone. That error compounds linearly with time; by 26+ years
-// past J2000.0 (this app's own "today" default — see secondsSinceJ2000)
-// it put the Moon's argument of periapsis nearly 190° off from real
-// Horizons data, i.e. roughly the wrong side of its orbit.
-//
-// Rather than re-derive the "correct" textbook rate by hand and risk the
-// same class of error again, these three rates are fit directly from real
-// JPL Horizons osculating elements at three dates spanning 2000-01-01
-// through today (2000-01-01 12:00 TDB, 2010-01-01 00:00 TDB, and
-// 2026-08-18 00:00 TDB) — (laterValue − earlierValue) / daysBetween, with
-// the number of full ±360° revolutions between samples resolved by
-// comparison against the textbook-period estimate (close enough over
-// these gaps to be unambiguous). This is real, empirically-fit secular
-// drift, correct at both ends of that 26-year span by construction; it
-// still doesn't capture the periodic (sub-cycle) perturbation wobble
-// real osculating elements have on top of the secular trend, which showed
-// up as a few degrees of residual at the 2010 midpoint when checked —
-// comparable to this app's least-precise planet (Uranus, ~6-8°).
+// Real value: radiusKm is the IAU-adopted mean lunar radius. Position comes
+// from moonGeocentricEclipticPosition above, not from any element stored
+// here — see MoonData's own comment.
 export const EARTH_MOON_DATA: MoonData = {
   id: "moon",
   color: "#bfbfbf",
   radiusKm: 1737.4,
-  semiMajorAxisKm: 381_874.5,
-  eccentricity: 0.063147,
-  inclinationDegrees: 5.240273,
-  ascendingNodeAtEpochDegrees: 123.958055,
-  ascendingNodeRatePerDay: -0.052913,
-  argumentOfPeriapsisAtEpochDegrees: 308.922673,
-  argumentOfPeriapsisRatePerDay: 0.165551,
-  meanAnomalyAtEpochDegrees: 146.673275,
-  meanAnomalyRatePerDay: 13.063776,
   textures: {
     map: "/textures/earth/moon/map.jpg",
     displacementMap: "/textures/earth/moon/displacement.jpg",

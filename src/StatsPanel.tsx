@@ -1,5 +1,14 @@
 import type { CSSProperties } from "react";
-import { EARTH_MOON_DATA, KM_PER_AU, orbitalPeriodDays, PLANETS, SUN_DATA } from "./astronomy";
+import {
+  EARTH_MOON_DATA,
+  KM_PER_AU,
+  MOON_MEAN_DISTANCE_KM,
+  MOON_MEAN_ECCENTRICITY,
+  MOON_SIDEREAL_MONTH_DAYS,
+  orbitalPeriodDays,
+  PLANETS,
+  SUN_DATA,
+} from "./astronomy";
 
 function capitalize(id: string) {
   return id[0].toUpperCase() + id.slice(1);
@@ -89,15 +98,9 @@ export function StatsPanel({ selectedId }: { selectedId: string | null }) {
       )}
       {isMoon && (
         <>
-          <Stat
-            label="Distance from Earth"
-            value={`${Math.round(EARTH_MOON_DATA.semiMajorAxisKm).toLocaleString()} km`}
-          />
-          <Stat label="Eccentricity" value={EARTH_MOON_DATA.eccentricity.toFixed(4)} />
-          <Stat
-            label="Orbital period"
-            value={formatPeriod(360 / EARTH_MOON_DATA.meanAnomalyRatePerDay)}
-          />
+          <Stat label="Distance from Earth" value={`${Math.round(MOON_MEAN_DISTANCE_KM).toLocaleString()} km`} />
+          <Stat label="Eccentricity" value={MOON_MEAN_ECCENTRICITY.toFixed(4)} />
+          <Stat label="Orbital period" value={formatPeriod(MOON_SIDEREAL_MONTH_DAYS)} />
           <Stat label="Rotation" value="Tidally locked" />
         </>
       )}

@@ -15,7 +15,10 @@ import {
   GM_SUN_SCALED,
   KM_TO_UNITS,
   MIN_VIEW_MULTIPLIER,
+  moonGeocentricEclipticPosition,
+  MOON_MEAN_DISTANCE_KM,
   MOON_RELIEF_KM,
+  MOON_SIDEREAL_MONTH_DAYS,
   PLACEHOLDER_SIZE,
   PLANETS,
   SUN_DATA,
@@ -175,6 +178,34 @@ function polePositionWorld(poleRaDegrees: number, poleDecDegrees: number): Vecto
   const zEcliptic = -yEquatorial * sinObliquity + zEquatorial * cosObliquity;
 
   return new Vector3(xEquatorial, zEcliptic, -yEcliptic);
+}
+
+// Converts a real ecliptic-frame position (longitude/latitude/distance —
+// e.g. moonGeocentricEclipticPosition's own output) directly into this
+// scene's world frame. Same ecliptic-to-world axis remap polePositionWorld
+// above already established for *directions* (ecliptic (x,y,z=north) →
+// world (x,z,-y), a pure rotation) — reused here for a *position* instead,
+// which transforms the same way under a pure rotation. Cross-checked
+// against tiltOrbitalPosition's own independently-verified convention: in
+// the degenerate flat-orbit case (inclination/ascendingNode/
+// argumentOfPeriapsis all 0), tiltOrbitalPosition reduces to world
+// (xOrb, 0, -yOrb); this function's own β=0 case reduces to world
+// (r cosλ, 0, -r sinλ) — the same (xOrb, 0, -yOrb) shape with r/λ standing
+// in for the orbital-plane radius/angle, confirming both agree on what
+// world +X/+Z mean.
+function eclipticPositionWorld(
+  longitudeDegrees: number,
+  latitudeDegrees: number,
+  distance: number,
+): [number, number, number] {
+  const longitude = (longitudeDegrees * Math.PI) / 180;
+  const latitude = (latitudeDegrees * Math.PI) / 180;
+  const cosLatitude = Math.cos(latitude);
+  return [
+    distance * cosLatitude * Math.cos(longitude),
+    distance * Math.sin(latitude),
+    -distance * cosLatitude * Math.sin(longitude),
+  ];
 }
 
 const NORTH_POLE_AXIS = new Vector3(0, 1, 0);
@@ -1381,62 +1412,36 @@ function Moon({
   const earthPositionObjectSpace = useRef(new Vector3());
 
   const radius = moon.radiusKm * KM_TO_UNITS;
-  const semiMajorAxis = moon.semiMajorAxisKm * KM_TO_UNITS;
-  const semiMinorAxis = semiMajorAxis * Math.sqrt(1 - moon.eccentricity ** 2);
-  const inclinationRadians = (moon.inclinationDegrees * Math.PI) / 180;
   const switchDistance = radius / ANGULAR_THRESHOLD;
   const displacementScale = MOON_RELIEF_KM * KM_TO_UNITS;
 
-  // Static snapshot of the orbit ellipse for the trace line, using the node/
-  // argument of periapsis at whatever moment this component mounts — both
-  // actually precess continuously (see astronomy.ts's own comment: 18.6yr/
-  // 8.85yr cycles), but redrawing this purely-visual guide every frame to
-  // track that isn't worth the cost; it'll go slightly stale over years of
-  // simulated time, same as every other approximation here. Earth-relative,
-  // like the Moon's own position — rendered as Earth's child too (below),
-  // so it rides along automatically.
+  // Static snapshot of the orbit trace for the line, sampled once per some
+  // fraction of a sidereal month starting from whatever moment this
+  // component mounts, rather than recomputed every frame — this is a
+  // purely-visual guide, not something that needs to track the real
+  // (continuously wobbling, per moonGeocentricEclipticPosition's own
+  // periodic terms) path exactly; it'll read as a slightly-off snapshot of
+  // that real path a month or more later, same as every other
+  // once-at-mount approximation in this file. Earth-relative, like the
+  // Moon's own position — rendered as Earth's child too (below), so it
+  // rides along automatically.
   const orbitPoints = useMemo(() => {
     const daysSinceEpoch = simulation.time / 86_400;
-    const ascendingNodeRadians =
-      ((moon.ascendingNodeAtEpochDegrees + moon.ascendingNodeRatePerDay * daysSinceEpoch) * Math.PI) / 180;
-    const argumentOfPeriapsisRadians =
-      ((moon.argumentOfPeriapsisAtEpochDegrees + moon.argumentOfPeriapsisRatePerDay * daysSinceEpoch) * Math.PI) /
-      180;
     const segments = 512;
     return Array.from({ length: segments + 1 }, (_, i) => {
-      const E = (i / segments) * Math.PI * 2;
-      return tiltOrbitalPosition(
-        semiMajorAxis * (Math.cos(E) - moon.eccentricity),
-        semiMinorAxis * Math.sin(E),
-        argumentOfPeriapsisRadians,
-        inclinationRadians,
-        ascendingNodeRadians,
-      );
+      const sampleDaysSinceEpoch = daysSinceEpoch + (i / segments) * MOON_SIDEREAL_MONTH_DAYS;
+      const { longitudeDegrees, latitudeDegrees, distanceKm } =
+        moonGeocentricEclipticPosition(sampleDaysSinceEpoch);
+      return eclipticPositionWorld(longitudeDegrees, latitudeDegrees, distanceKm * KM_TO_UNITS);
     });
-  }, [moon, semiMajorAxis, semiMinorAxis, inclinationRadians]);
+  }, []);
 
   useFrame(() => {
     if (!group.current) return;
 
     const daysSinceEpoch = simulation.time / 86_400;
-    const twoPi = 2 * Math.PI;
-    const ascendingNodeRadians =
-      ((moon.ascendingNodeAtEpochDegrees + moon.ascendingNodeRatePerDay * daysSinceEpoch) * Math.PI) / 180;
-    const argumentOfPeriapsisRadians =
-      ((moon.argumentOfPeriapsisAtEpochDegrees + moon.argumentOfPeriapsisRatePerDay * daysSinceEpoch) * Math.PI) /
-      180;
-    const rawMeanAnomaly =
-      ((moon.meanAnomalyAtEpochDegrees + moon.meanAnomalyRatePerDay * daysSinceEpoch) * Math.PI) / 180;
-    const meanAnomaly = ((rawMeanAnomaly % twoPi) + twoPi) % twoPi;
-    const eccentricAnomaly = solveEccentricAnomaly(meanAnomaly, moon.eccentricity);
-
-    const [ox, oy, oz] = tiltOrbitalPosition(
-      semiMajorAxis * (Math.cos(eccentricAnomaly) - moon.eccentricity),
-      semiMinorAxis * Math.sin(eccentricAnomaly),
-      argumentOfPeriapsisRadians,
-      inclinationRadians,
-      ascendingNodeRadians,
-    );
+    const { longitudeDegrees, latitudeDegrees, distanceKm } = moonGeocentricEclipticPosition(daysSinceEpoch);
+    const [ox, oy, oz] = eclipticPositionWorld(longitudeDegrees, latitudeDegrees, distanceKm * KM_TO_UNITS);
     // Earth-relative, and this *is* the final position: Earth's own group
     // (this mesh's literal Three.js parent — see Planet's children prop)
     // only ever translates, so Three's own transform composition adds
@@ -1516,7 +1521,8 @@ function Moon({
     const parentDistance = group.current.parent
       ? state.camera.position.distanceTo(group.current.parent.position)
       : distance;
-    const currentlySeparated = semiMajorAxis / parentDistance > MOON_PLACEHOLDER_MIN_SEPARATION;
+    const currentlySeparated =
+      (MOON_MEAN_DISTANCE_KM * KM_TO_UNITS) / parentDistance > MOON_PLACEHOLDER_MIN_SEPARATION;
 
     if (mesh.current) mesh.current.visible = showReal;
     if (placeholder.current) {
