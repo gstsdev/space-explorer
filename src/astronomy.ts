@@ -35,7 +35,12 @@ export const MIN_VIEW_MULTIPLIER = 3;
 
 // Below this angular size (radians, radius/distance), a body is too small to
 // read as a sphere and renders as a flat, constant-size placeholder instead.
-export const ANGULAR_THRESHOLD = 0.02;
+// Tuned (in part) so Earth's own switchDistance (radiusKm / this) clears the
+// Moon's ~384,400-420,000 km real orbital range (including its own
+// eccentricity and the camera's offset when focused on the Moon itself) —
+// at the previous 0.02, Earth degraded to a placeholder before the camera
+// even reached the Moon, so the real Earth was never visible from there.
+export const ANGULAR_THRESHOLD = 0.0125;
 
 // Scale factor for the placeholder's on-screen size (distance * this = world scale).
 export const PLACEHOLDER_SIZE = 0.01;
