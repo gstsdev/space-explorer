@@ -120,6 +120,11 @@ export type PlanetAtmosphereData = {
   // tuned value here, rather than asserting an unverified color for
   // atmospheres this hasn't been reasoned through for.
   nightColor?: string;
+  // Tint for the sunset/twilight band along the terminator, rendered as a
+  // surface-level color-tint term in TexturedSurface (see that component's
+  // sunsetColor comment for why it lives on the surface rather than the
+  // Atmosphere shell). Optional and only wired up for Earth so far.
+  sunsetColor?: string;
 };
 
 export type PlanetData = {
@@ -635,6 +640,10 @@ export const PLANETS: PlanetData[] = [
       scaleHeightKm: 8.5,
       relativeSurfacePressure: 1,
       nightColor: "#5d7c9a",
+      // See PlanetAtmosphereData.sunsetColor's comment. A real sunset-orange
+      // as photographed from orbit, not tuned/verified beyond "looks like
+      // reference photos."
+      sunsetColor: "#c68566",
     },
   },
   {

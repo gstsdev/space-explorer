@@ -293,6 +293,25 @@ const ATMOSPHERE_UNTINTED_NIGHT_DARKEN = 0.2;
 // at any camera distance without separate tuning.
 const ATMOSPHERE_RIM_FADE_WIDTH = 0.15;
 
+// TexturedSurface's sunset band (see that component's own comment for why
+// it's a surface-level term keyed purely on local sun elevation, not a
+// rim/view-angle-gated one like the Atmosphere shell's earlier, reverted
+// twilight-tint attempt). A Gaussian falloff centered on the terminator
+// (dot(N, sunDir) = 0), not a triangular ramp between fixed start/end
+// angles — a triangle's straight sides meeting at sharp corners is exactly
+// what reads as a hard-edged "band" rather than a natural glow; a Gaussian
+// has no corners anywhere; it just asymptotically fades out, so there's no
+// specific angle where an edge is visible. This constant is its standard
+// deviation in dot-product units — since d(cosθ)/dθ ≈ 1 per radian near
+// θ=90°, 0.01 corresponds to a ~0.6° standard deviation. Eyeballed against
+// the running app rather than derived.
+const SUNSET_BAND_SIGMA = 0.01;
+
+// Max diffuseColor blend toward sunsetColor, right at the terminator itself
+// (see the mapAdditions comment below for why this mixes into diffuseColor
+// rather than adding emissive light). Also eyeballed live.
+const SUNSET_TINT_STRENGTH = 0.2;
+
 function capitalize(id: string) {
   return id[0].toUpperCase() + id.slice(1);
 }
@@ -371,6 +390,36 @@ type OnFocus = (target: Object3D, id: string) => void;
 // the limb glow on its own, so this is a soft reinforcement where the two
 // overlap toward the edge, not a second full-strength copy of it.
 const SURFACE_GLOW_FACTOR = 0.15;
+
+// sunsetColor (optional, see PlanetAtmosphereData): a third, independent
+// effect through the same onBeforeCompile patch — a color tint keyed purely
+// on dot(vObjectNormal, sunDirection) (the same object-space pair the
+// night-lights term above uses), with no view-angle/rim gating at all. That
+// matters: the Atmosphere shell's own glow (and this file's radial-gradient
+// term just below) both fade to ~0 away from the grazing silhouette, so
+// neither can show color anywhere except right at the limb — meaning a
+// color band keyed to terminator proximity only ever shows where the
+// terminator happens to cross that silhouette (two points), not along its
+// whole visible curve across the disc the way real limb-glow photos from
+// orbit show it. An earlier attempt at a terminator-proximity tint lived on
+// the Atmosphere shell instead (mixed into its rim glow, see tintedGlsl's
+// own comment there) and was reverted for exactly that reason, plus a
+// concrete, visible bug: near-degenerate sun/camera viewing angles made the
+// two-point footprint smear into a long streak along the limb (rim and
+// terminator are two independent great circles that go near-tangent at
+// those two points). This term sidesteps both problems structurally, not
+// just by tuning: keyed on a single band (terminator proximity) with no
+// second curved band (view angle) intersecting it, it has no near-tangent
+// geometry to go degenerate, and since it's unrelated to view angle it
+// shows wherever the terminator is visible on the sphere, including
+// straight across the middle of the disc — matching real photos instead of
+// only flaring at the limb.
+//
+// Mixed into diffuseColor (see the map_fragment injection below), not added
+// to totalEmissiveRadiance — a real sunset tints the *ground itself*, still
+// subject to the sun's own lighting falloff (so it dims toward night like
+// everything else this material renders), rather than an extra light
+// shining on top of the scene regardless of local illumination.
 
 // Shapes the radial gradient above: the raw Fresnel term (1 - |dot(N,V)|)
 // is 0 at the point facing the camera and 1 at the true silhouette,
@@ -462,6 +511,7 @@ function TexturedSurface({
 
         let uniformDeclarations = "#include <common>\nvarying vec3 vObjectNormal;\nuniform vec3 sunDirection;";
         let emissiveAdditions = "#include <emissivemap_fragment>";
+        let mapAdditions = "#include <map_fragment>";
 
         if (maps.nightMap) {
           shader.uniforms.nightMap = { value: maps.nightMap };
@@ -499,8 +549,23 @@ function TexturedSurface({
             totalEmissiveRadiance += atmosphereFinalColor * atmosphereRim * atmosphereIntensity;`;
         }
 
+        if (atmosphere?.sunsetColor) {
+          shader.uniforms.sunsetColor = { value: new Color(atmosphere.sunsetColor) };
+          shader.uniforms.sunsetStrength = { value: SUNSET_TINT_STRENGTH };
+          uniformDeclarations += "\nuniform vec3 sunsetColor;\nuniform float sunsetStrength;";
+          // See SUNSET_TINT_STRENGTH's own comment for why this mixes into
+          // diffuseColor (injected right after #include <map_fragment> sets
+          // it from the base texture) rather than adding to
+          // totalEmissiveRadiance like the other two effects above.
+          mapAdditions += `
+            float sunsetDot = dot(normalize(vObjectNormal), normalize(sunDirection));
+            float sunsetBand = exp(-(sunsetDot * sunsetDot) / (2.0 * ${SUNSET_BAND_SIGMA} * ${SUNSET_BAND_SIGMA}));
+            diffuseColor.rgb = mix(diffuseColor.rgb, sunsetColor, sunsetBand * sunsetStrength);`;
+        }
+
         let fragmentShader = shader.fragmentShader
           .replace("#include <common>", uniformDeclarations)
+          .replace("#include <map_fragment>", mapAdditions)
           .replace("#include <emissivemap_fragment>", emissiveAdditions);
 
         if (eclipseShadow) {
@@ -790,7 +855,10 @@ function Atmosphere({
   // band's screen-space footprint stretches out along the limb — showing up
   // as a bright, saturated smear bulging past the terminator specifically
   // at the top/bottom of the disc. Simpler day-color/night-color-only
-  // mixing avoids that failure mode entirely.
+  // mixing avoids that failure mode entirely. (A sunset/twilight tint is
+  // now handled instead as a surface-level term in TexturedSurface, keyed
+  // purely on local sun elevation with no view-dependent rim gating — see
+  // that component's own comment for why that sidesteps this artifact.)
   const tintedGlsl = `
     float daylight = smoothstep(${ATMOSPHERE_TERMINATOR_FADE_DOT}, 0.0, dot(vNormal, normalize(sunDirection)));
     vec3 finalColor = mix(nightColor, glowColor, daylight);
