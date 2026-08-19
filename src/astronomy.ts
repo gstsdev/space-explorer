@@ -604,6 +604,9 @@ export const PLANETS: PlanetData[] = [
     textures: {
       map: "/textures/mercury/map.jpg",
     },
+    // Closest planet to the Sun's pointLight — the most overexposed body in
+    // the scene (see PlanetData.surfaceTint's own comment).
+    surfaceTint: "#4d4d4d",
   },
   {
     id: "venus",
@@ -637,6 +640,11 @@ export const PLANETS: PlanetData[] = [
     textures: {
       map: "/textures/venus/map.jpg",
     },
+    // Roughly Earth's own distance from the Sun's pointLight (so a similar
+    // ~20-30x overexposure — see PlanetData.surfaceTint's own comment), and
+    // real Venus's sulfuric-acid cloud tops are a pale cream/white with
+    // about as little exposure headroom as Mercury's or the Moon's map.
+    surfaceTint: "#6b6b6b",
     // Real: dense CO2 atmosphere under a global sulfuric-acid haze, ~92x
     // Earth's surface pressure — the thickest, brightest glow of the three
     // atmospheres modeled here.
@@ -836,4 +844,7 @@ export const EARTH_MOON_DATA: MoonData = {
     map: "/textures/earth/moon/map.jpg",
     displacementMap: "/textures/earth/moon/displacement.jpg",
   },
+  // Same distance from the Sun as Earth, so the same overexposure — see
+  // PlanetData.surfaceTint's own comment.
+  surfaceTint: "#808080",
 };
