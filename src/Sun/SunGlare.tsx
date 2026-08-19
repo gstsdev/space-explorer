@@ -29,6 +29,16 @@ const GLARE_SIZE = 0.6;
 // slower than real perspective would on its own.
 const GLARE_DISTANCE_EXPONENT = 0.5;
 
+// Radial cutoff (in the same normalized [-1,1] UV space as the fragment
+// shader's `d`) for what counts as a click on the glow itself. The quad is
+// deliberately oversized so the diffraction spikes have room to read as long
+// rays (see GLARE_SIZE above), but those spikes shouldn't be clickable —
+// otherwise the glare's hit area would reach almost to the quad's edge in
+// eight directions, stealing clicks meant for whatever's behind it (e.g. the
+// placeholder dot). Hit-testing is a plain circle around the core rather
+// than trying to match the spikes' star shape.
+const GLARE_CLICK_RADIUS = 0.35;
+
 // A soft, screen-space-sized glow standing in for the sun's glare as seen
 // from realistic (planet-scale) distances — real cameras and eyes see a
 // bright point source with a halo much bigger than its actual angular disk.
@@ -71,9 +81,20 @@ export function SunGlare({ onClick }: { onClick: (event: ThreeEvent<MouseEvent>)
     material.current.uniforms.opacity.value = t * t * (3 - 2 * t); // smoothstep
   }, FRAME_PRIORITY.updateVisibility);
 
+  const handleClick = (event: ThreeEvent<MouseEvent>) => {
+    // event.uv is undefined only if the geometry lacks UVs, which
+    // planeGeometry never does — the guard is just to satisfy the type.
+    if (!event.uv) return;
+    const d = Math.hypot((event.uv.x - 0.5) * 2, (event.uv.y - 0.5) * 2);
+    // Outside the core radius: don't stopPropagation (that's onClick's job),
+    // so the click passes through to whatever else the ray hit.
+    if (d > GLARE_CLICK_RADIUS) return;
+    onClick(event);
+  };
+
   return (
     <Billboard>
-      <mesh ref={mesh} onClick={onClick} {...hoverCursor}>
+      <mesh ref={mesh} onClick={handleClick} {...hoverCursor}>
         <planeGeometry args={[1, 1]} />
         <shaderMaterial
           ref={material}
