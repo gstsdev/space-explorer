@@ -179,7 +179,15 @@ export function TexturedSurface({
       // comment for why some planets need this. `color` defaults to white
       // (a no-op multiply) when the planet doesn't set one.
       color={tint ?? "#ffffff"}
-      specular="#333333"
+      // Phong's specular highlight is meant to be masked by specularMap
+      // (see this file's own doc comment — Earth's grayscale ocean mask is
+      // what it's authored for), not applied full-strength to a bare rocky
+      // surface: a planet with no specularMap has no per-pixel data saying
+      // *where* it should shine, so a flat "#333333" reads as an ungated
+      // gloss over the whole disc — invisible while the surface was still
+      // overexposed toward white, but a visibly wrong "wet reflection" once
+      // surfaceTint brought the diffuse back into a normal range (Mercury).
+      specular={maps.specularMap ? "#333333" : "#000000"}
       shininess={15}
       onBeforeCompile={(shader) => {
         if (!maps.nightMap && !atmosphere && !eclipseShadow) return;
