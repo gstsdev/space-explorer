@@ -2,9 +2,10 @@
 
 A real-scale, physically-accurate solar system explorer, built with React Three Fiber / Three.js / TypeScript / Vite.
 
+**Live demo: [space-explorer-red.vercel.app](https://space-explorer-red.vercel.app)**
+
 Sizes, distances, orbital periods, orbital shapes, and axial orientation are true-to-scale and real — not artistically exaggerated. Every planet (plus Earth's Moon) is simulated as an independent [two-body](https://en.wikipedia.org/wiki/Two-body_problem) [Keplerian ellipse](https://en.wikipedia.org/wiki/Kepler_orbit) around the Sun, using real [orbital elements](https://en.wikipedia.org/wiki/Orbital_elements) referenced to the [J2000.0 epoch](https://en.wikipedia.org/wiki/Epoch_(astronomy)#Julian_years_and_J2000). The app opens with every body at its actual current position in the sky.
 
-<!-- TODO: screenshot — wide shot of the solar system with orbit lines -->
 ![Solar system overview](docs/screenshots/overview.png)
 
 ## Features
@@ -17,10 +18,8 @@ Sizes, distances, orbital periods, orbital shapes, and axial orientation are tru
 - **Adjustable simulation speed**, from real-time up to fast-forward.
 - **Camera controls** — click any body to smoothly focus and dolly to it, with per-body view distances scaled to its real radius.
 
-<!-- TODO: screenshot — close-up of a planet with visible atmosphere/clouds -->
 ![Planet close-up](docs/screenshots/planet-closeup.png)
 
-<!-- TODO: screenshot — Saturn showing ring shadow -->
 ![Saturn's rings](docs/screenshots/saturn-rings.png)
 
 ## Getting started
