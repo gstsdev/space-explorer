@@ -113,11 +113,16 @@ const SUNSET_TINT_STRENGTH = 0.2;
 
 export function TexturedSurface({
   textures,
+  tint,
   sunDirection,
   atmosphere,
   eclipseShadow,
 }: {
   textures: PlanetTextures;
+  // See PlanetData.surfaceTint's own comment. A sibling prop, not a field
+  // on textures — that object is passed straight to useTexture() below,
+  // which treats every key as an image URL to load.
+  tint?: string;
   sunDirection: RefObject<Vector3>;
   atmosphere?: PlanetAtmosphereData;
   // Only ever set for Earth (see astronomy.ts's own comment on why the
@@ -170,6 +175,10 @@ export function TexturedSurface({
       map={maps.map}
       normalMap={maps.normalMap}
       specularMap={maps.specularMap}
+      // Multiplies the diffuse map — see PlanetData.surfaceTint's own
+      // comment for why some planets need this. `color` defaults to white
+      // (a no-op multiply) when the planet doesn't set one.
+      color={tint ?? "#ffffff"}
       specular="#333333"
       shininess={15}
       onBeforeCompile={(shader) => {

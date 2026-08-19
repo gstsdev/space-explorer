@@ -53,6 +53,7 @@ export function Scene({
           argumentOfPeriapsisDegrees={planet.argumentOfPeriapsisDegrees}
           selected={selectedId === planet.id}
           textures={planet.textures}
+          surfaceTint={planet.surfaceTint}
           ring={planet.ring}
           atmosphere={planet.atmosphere}
           clouds={planet.clouds}

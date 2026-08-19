@@ -333,6 +333,7 @@ export function Moon({
           <Suspense fallback={<meshStandardMaterial color={moon.color} roughness={0.9} metalness={0} />}>
             <MoonSurface
               textures={moon.textures}
+              tint={moon.surfaceTint}
               displacementScale={displacementScale}
               displacementBias={-displacementScale / 2}
               sunDirection={sunDirection}

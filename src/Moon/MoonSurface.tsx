@@ -19,12 +19,17 @@ import { ATMOSPHERE_TERMINATOR_FADE_DOT } from "../atmosphereShading";
 // make it worth the extra geometry cost.
 export function MoonSurface({
   textures,
+  tint,
   displacementScale,
   displacementBias,
   sunDirection,
   eclipseShadow,
 }: {
   textures: MoonData["textures"];
+  // See PlanetData.surfaceTint's own comment. A sibling prop, not a field
+  // on textures — that object is passed straight to useTexture() below,
+  // which treats every key as an image URL to load.
+  tint?: string;
   displacementScale: number;
   displacementBias: number;
   // Object-space (this mesh's own spin frame) direction to the sun — same
@@ -64,6 +69,9 @@ export function MoonSurface({
       displacementMap={maps.displacementMap}
       displacementScale={displacementScale}
       displacementBias={displacementBias}
+      // Multiplies the diffuse map — see PlanetData.surfaceTint's own
+      // comment for why the Moon needs this.
+      color={tint ?? "#ffffff"}
       specular="#111111"
       shininess={2}
       onBeforeCompile={(shader) => {

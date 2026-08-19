@@ -79,6 +79,10 @@ export const DEFAULT_SPEED_EXPONENT = 0;
 // each map individually optional) since specular/normal maps are meaningless
 // without the base color map, and it keeps the loading code in
 // Planet/TexturedSurface.tsx simple.
+// Passed directly to drei's useTexture() (Planet/TexturedSurface.tsx), which
+// treats every key here as an image URL to load — so nothing that isn't a
+// real texture path belongs in this object. See PlanetData.surfaceTint for
+// the exposure-compensation field this used to (wrongly) live inside here.
 export type PlanetTextures = {
   map: string;
   normalMap?: string;
@@ -216,6 +220,22 @@ export type PlanetData = {
   // would only be accurate near whatever date it was fit to.
   rotationAtEpochDegrees?: number;
   textures?: PlanetTextures;
+  // Multiplies the diffuse map before lighting (meshPhongMaterial's own
+  // `color`, which is a plain per-channel multiply against `map`) — an
+  // exposure compensation for light gray/white surfaces, not a color
+  // choice. The Sun's pointLight (see Sun.tsx's own decay=1 comment) is
+  // tuned so outer planets stay visible, which overexposes close-in ones by
+  // tens of times; ACES tone mapping (this app's default) rolls that off
+  // toward white rather than clipping, but a map whose pixels are already
+  // light gray has so little headroom before saturating that the rolloff
+  // reads as flat white with no surface detail — Mercury specifically (see
+  // its own comment below). A duller-albedo map (Mars's red-orange,
+  // Jupiter's bands) has more headroom before all channels clip together,
+  // so it doesn't need this. Eyeballed against the running app, same as
+  // this file's other empirically-fit constants. Deliberately a sibling of
+  // textures, not a field inside it — that object is passed straight to
+  // useTexture(), which treats every key as an image URL to load.
+  surfaceTint?: string;
   ring?: PlanetRingData;
   atmosphere?: PlanetAtmosphereData;
   clouds?: PlanetCloudsData;
@@ -270,6 +290,12 @@ export type MoonData = {
     map: string;
     displacementMap?: string;
   };
+  // See PlanetData.surfaceTint's own comment — same overexposure
+  // compensation, needed here for the same reason (a light gray map lit by
+  // the same close-in Sun light Earth's own TexturedSurface deals with).
+  // Deliberately a sibling of textures, not a field inside it — see
+  // PlanetTextures's own comment for why.
+  surfaceTint?: string;
 };
 
 // Display-only reference constants (StatsPanel) — NOT used by the position

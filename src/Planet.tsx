@@ -159,6 +159,7 @@ export type PlanetProps = {
   argumentOfPeriapsisDegrees?: number;
   selected: boolean;
   textures?: PlanetTextures;
+  surfaceTint?: string;
   ring?: PlanetRingData;
   atmosphere?: PlanetAtmosphereData;
   clouds?: PlanetCloudsData;
@@ -201,6 +202,7 @@ export function Planet({
   argumentOfPeriapsisDegrees = 0,
   selected,
   textures,
+  surfaceTint,
   ring,
   atmosphere,
   clouds,
@@ -486,6 +488,7 @@ export function Planet({
             <Suspense fallback={<meshStandardMaterial color={color} roughness={0.7} metalness={0.1} />}>
               <TexturedSurface
                 textures={textures}
+                tint={surfaceTint}
                 sunDirection={sunDirection}
                 atmosphere={atmosphere}
                 eclipseShadow={
