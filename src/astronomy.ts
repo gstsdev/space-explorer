@@ -846,5 +846,5 @@ export const EARTH_MOON_DATA: MoonData = {
   },
   // Same distance from the Sun as Earth, so the same overexposure — see
   // PlanetData.surfaceTint's own comment.
-  surfaceTint: "#808080",
+  surfaceTint: "#b0b0b0",
 };
