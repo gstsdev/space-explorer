@@ -219,6 +219,15 @@ export function Planet({
   // constant size on screen, like a marker on a map — until we're close
   // enough to see the real mesh, at which point we swap to that instead.
   const placeholder = useRef<Mesh>(null);
+  // Atmosphere/Clouds are separate meshes, each real (if thin) 3D geometry
+  // rather than a billboard placeholder — nothing else keeps them in sync
+  // with the real surface mesh's own closeEnough/showReal LOD swap below,
+  // so without these they'd stay visible at their true (tiny) real-scale
+  // size even once the surface itself has swapped to the placeholder,
+  // showing as a small but clearly-visible shell floating around what's
+  // now just a flat dot.
+  const atmosphereMesh = useRef<Mesh>(null);
+  const cloudsMesh = useRef<Mesh>(null);
   // Direction to the sun in this mesh's own OBJECT space (not world/view
   // space) — used by TexturedSurface's night-lights shader. Object space
   // means it's correct regardless of camera timing, and it naturally
@@ -426,6 +435,8 @@ export function Planet({
     // honest (if often literally invisible) "this is where it really is."
     const showReal = closeEnough || !showPlaceholder;
     if (mesh.current) mesh.current.visible = showReal;
+    if (atmosphereMesh.current) atmosphereMesh.current.visible = showReal;
+    if (cloudsMesh.current) cloudsMesh.current.visible = showReal;
     if (placeholder.current) {
       placeholder.current.visible = !closeEnough && showPlaceholder;
       placeholder.current.scale.setScalar(distance * PLACEHOLDER_SIZE);
@@ -512,9 +523,12 @@ export function Planet({
             radius={radius}
             radiusKm={radiusKm}
             sunDirection={localSunDirection}
+            meshRef={atmosphereMesh}
           />
         ) : null}
-        {clouds ? <Clouds clouds={clouds} radius={radius} sunDirection={localSunDirection} /> : null}
+        {clouds ? (
+          <Clouds clouds={clouds} radius={radius} sunDirection={localSunDirection} meshRef={cloudsMesh} />
+        ) : null}
         {showLabel ? <BodyLabel id={id} selected={selected} /> : null}
         {children}
       </group>

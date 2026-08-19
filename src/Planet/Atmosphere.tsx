@@ -55,14 +55,18 @@ export function Atmosphere({
   radius,
   radiusKm,
   sunDirection,
+  meshRef,
 }: {
   atmosphere: PlanetAtmosphereData;
   radius: number;
   radiusKm: number;
   sunDirection: RefObject<Vector3>;
+  // Planet's own LOD/visibility useFrame writes this shell's .visible
+  // directly (see that ref's own comment on Planet) — this component has
+  // no LOD logic of its own, it just needs to expose its mesh for that.
+  meshRef: RefObject<Mesh | null>;
 }) {
   const material = useRef<ShaderMaterial>(null);
-  const mesh = useRef<Mesh>(null);
   const outerRadius = radius * (1 + (atmosphere.scaleHeightKm * ATMOSPHERE_HEIGHT_EXAGGERATION) / radiusKm);
   const intensity = atmosphereIntensity(atmosphere.relativeSurfacePressure);
   const glowColor = useMemo(() => new Color(atmosphere.color), [atmosphere.color]);
@@ -129,7 +133,7 @@ export function Atmosphere({
   `;
 
   return (
-    <mesh ref={mesh}>
+    <mesh ref={meshRef}>
       <sphereGeometry args={[outerRadius, 100, 100]} />
       <shaderMaterial
         ref={material}

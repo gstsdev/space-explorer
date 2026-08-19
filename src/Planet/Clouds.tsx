@@ -2,6 +2,7 @@ import { useMemo, useRef } from "react";
 import type { RefObject } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Color, ShaderMaterial, Vector3 } from "three";
+import type { Mesh } from "three";
 import type { PlanetCloudsData } from "../astronomy";
 import { simulation } from "../simulation";
 import { FRAME_PRIORITY } from "../framePriority";
@@ -86,10 +87,15 @@ export function Clouds({
   clouds,
   radius,
   sunDirection,
+  meshRef,
 }: {
   clouds: PlanetCloudsData;
   radius: number;
   sunDirection: RefObject<Vector3>;
+  // Planet's own LOD/visibility useFrame writes this shell's .visible
+  // directly (see that ref's own comment on Planet) — this component has
+  // no LOD logic of its own, it just needs to expose its mesh for that.
+  meshRef: RefObject<Mesh | null>;
 }) {
   const material = useRef<ShaderMaterial>(null);
   const cloudColor = useMemo(() => new Color(clouds.color), [clouds.color]);
@@ -101,7 +107,7 @@ export function Clouds({
   }, FRAME_PRIORITY.updateVisibility);
 
   return (
-    <mesh>
+    <mesh ref={meshRef}>
       <sphereGeometry args={[radius * CLOUD_SHELL_RATIO, 100, 100]} />
       <shaderMaterial
         ref={material}
