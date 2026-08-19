@@ -12,7 +12,7 @@ import {
   PLACEHOLDER_SIZE,
   VIEW_MULTIPLIER,
 } from "./astronomy";
-import type { PlanetAtmosphereData, PlanetRingData, PlanetTextures } from "./astronomy";
+import type { PlanetAtmosphereData, PlanetCloudsData, PlanetRingData, PlanetTextures } from "./astronomy";
 import { simulation } from "./simulation";
 import { FRAME_PRIORITY } from "./framePriority";
 import { BodyLabel } from "./BodyLabel";
@@ -21,6 +21,7 @@ import type { OnFocus } from "./sceneCommon";
 import { sunOcclusionBodies } from "./sunProperties";
 import type { OcclusionBody } from "./sunProperties";
 import { Atmosphere } from "./Planet/Atmosphere";
+import { Clouds } from "./Planet/Clouds";
 import { PlanetRing } from "./Planet/PlanetRing";
 import { TexturedSurface } from "./Planet/TexturedSurface";
 
@@ -160,6 +161,7 @@ export type PlanetProps = {
   textures?: PlanetTextures;
   ring?: PlanetRingData;
   atmosphere?: PlanetAtmosphereData;
+  clouds?: PlanetCloudsData;
   showOrbit: boolean;
   showPlaceholder: boolean;
   showLabel: boolean;
@@ -201,6 +203,7 @@ export function Planet({
   textures,
   ring,
   atmosphere,
+  clouds,
   showOrbit,
   showPlaceholder,
   showLabel,
@@ -511,6 +514,7 @@ export function Planet({
             sunDirection={localSunDirection}
           />
         ) : null}
+        {clouds ? <Clouds clouds={clouds} radius={radius} sunDirection={localSunDirection} /> : null}
         {showLabel ? <BodyLabel id={id} selected={selected} /> : null}
         {children}
       </group>

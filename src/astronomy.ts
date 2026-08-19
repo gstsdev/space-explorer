@@ -128,6 +128,21 @@ export type PlanetAtmosphereData = {
   sunsetColor?: string;
 };
 
+// Unlike every other field in this file, deliberately NOT a real, dated
+// snapshot of anything — Planet/Clouds.tsx generates a continuously
+// morphing procedural cloud pattern (animated fractal noise) rather than
+// sampling a real satellite cloud-cover texture. Real cloud cover has no
+// orbital-mechanics-style closed form the way axial rotation or orbital
+// position do (it's chaotic weather, not periodic motion), so there's no
+// way to compute "the real clouds" at an arbitrary simulated date the way
+// this file computes everything else — a real satellite photo would only
+// ever be accurate for the one moment it was taken. This trades that
+// real-but-frozen accuracy for a plausible-looking, never-repeating
+// pattern instead. See Planet/Clouds.tsx's own comment for the rest.
+export type PlanetCloudsData = {
+  color: string;
+};
+
 export type PlanetData = {
   id: string;
   color: string;
@@ -203,6 +218,7 @@ export type PlanetData = {
   textures?: PlanetTextures;
   ring?: PlanetRingData;
   atmosphere?: PlanetAtmosphereData;
+  clouds?: PlanetCloudsData;
 };
 
 // See PlanetAtmosphereData.scaleHeightKm's comment for why this exists.
@@ -645,6 +661,10 @@ export const PLANETS: PlanetData[] = [
       // as photographed from orbit, not tuned/verified beyond "looks like
       // reference photos."
       sunsetColor: "#c68566",
+    },
+    // See PlanetCloudsData's own comment — procedural, not real.
+    clouds: {
+      color: "#ffffff",
     },
   },
   {

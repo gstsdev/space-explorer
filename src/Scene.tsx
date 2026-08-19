@@ -55,6 +55,7 @@ export function Scene({
           textures={planet.textures}
           ring={planet.ring}
           atmosphere={planet.atmosphere}
+          clouds={planet.clouds}
           showOrbit={showOrbits}
           showPlaceholder={showPlaceholders}
           showLabel={showLabels}
