@@ -16,12 +16,47 @@
   user-select: none;
 }
 
+.toggleButton {
+  display: none;
+  position: fixed;
+  /* ViewControls' buttons sit inside a 4px-padded container (top: 16px +
+     padding: 4px), so this bare button needs the same +4px to align. */
+  top: 20px;
+  left: 16px;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  /* Same rgba(255,255,255,0.15) highlight ViewControls' active buttons get
+     from sitting in a shared dark container, layered over a dark base since
+     this button isn't inside one. Always on, not just while toggled open —
+     it's the only way this floating chip reads clearly over the skybox. */
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.15)),
+    rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  color: #ffffff;
+}
+
 /* Below this width, ViewControls (top: 16px, 44px tall) sits above this
    panel instead of beside it, so push down past it plus the same 16px
-   spacing it already uses above itself. */
+   spacing it already uses above itself. The panel itself is also hidden
+   behind .toggleButton here to save space, only shown once toggled open. */
 @media (max-width: 580px) {
   .panel {
     top: 76px;
+    display: none;
+  }
+
+  .panel[data-open="true"] {
+    display: flex;
+  }
+
+  .toggleButton {
+    display: flex;
   }
 }
 
