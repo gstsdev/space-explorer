@@ -7,6 +7,7 @@ import type { PlanetCloudsData } from "../astronomy";
 import { simulation } from "../simulation";
 import { FRAME_PRIORITY } from "../framePriority";
 import { ATMOSPHERE_TERMINATOR_FADE_DOT } from "../atmosphereShading";
+import type { Quality } from "../quality";
 
 // See PlanetCloudsData's own comment for why this is procedural rather than
 // a real satellite cloud-cover texture. A thin shell just outside the
@@ -83,11 +84,49 @@ const CLOUD_OPACITY = 0.85;
 // photos rather than going near-black.
 const CLOUD_NIGHT_DARKEN = 0.1;
 
+// fbm's octave count and the domain-warp offset's own noise cost are the
+// two knobs that make this shader either the original full-detail version
+// or the cut-down one that a low-end mobile GPU (a Galaxy A16/Mali-G57
+// crashed/struggled otherwise — see quality.ts) can actually run at
+// interactive framerates once Earth's cloud shell fills a meaningful chunk
+// of the screen. Baked into the GLSL source string in JS rather than driven
+// by a uniform/dynamic loop bound — Clouds is remounted (via a `key` on
+// `quality` at the call site) on a tier change, so there's no need for the
+// shader itself to branch at runtime, and fixed loop bounds sidestep any
+// mobile-driver quirks around variable ones.
+function fbmOctaves(quality: Quality): number {
+  return quality === "high" ? 5 : 2;
+}
+
+// "high": the original three fbm() calls (this is what the warp offset
+// looked like before this session's mobile perf pass). "low": three raw,
+// single-octave snoise() calls instead — the offset just needs to bend the
+// field into organic streaks, it doesn't need fbm's extra high-frequency
+// layers to read as a warp, and cutting them was 9 of the 12 total
+// snoise() evals/fragment this replaced. Scaled by 0.5 to match fbm's own
+// dominant (largest-amplitude) first octave, keeping the warp strength
+// close to the "high" look.
+function warpOffsetGlsl(quality: Quality): string {
+  if (quality === "high") {
+    return `vec3 warpOffset = vec3(
+      fbm(samplePoint + vec3(37.2, 11.4, 5.1)),
+      fbm(samplePoint + vec3(3.5, 91.2, 22.8)),
+      fbm(samplePoint + vec3(71.1, 4.9, 63.3))
+    );`;
+  }
+  return `vec3 warpOffset = 0.5 * vec3(
+    snoise(samplePoint + vec3(37.2, 11.4, 5.1)),
+    snoise(samplePoint + vec3(3.5, 91.2, 22.8)),
+    snoise(samplePoint + vec3(71.1, 4.9, 63.3))
+  );`;
+}
+
 export function Clouds({
   clouds,
   radius,
   sunDirection,
   meshRef,
+  quality,
 }: {
   clouds: PlanetCloudsData;
   radius: number;
@@ -96,6 +135,7 @@ export function Clouds({
   // directly (see that ref's own comment on Planet) — this component has
   // no LOD logic of its own, it just needs to expose its mesh for that.
   meshRef: RefObject<Mesh | null>;
+  quality: Quality;
 }) {
   const material = useRef<ShaderMaterial>(null);
   const cloudColor = useMemo(() => new Color(clouds.color), [clouds.color]);
@@ -188,15 +228,16 @@ export function Clouds({
             return 42.0 * dot(m * m, vec4(dot(p0, x0), dot(p1, x1), dot(p2, x2), dot(p3, x3)));
           }
 
-          // Fractional Brownian motion: five octaves of the noise above,
-          // each higher-frequency and lower-amplitude than the last — a
-          // single octave of simplex noise looks like uniform blobs, this
-          // layering is what gives it the wispy, detailed-at-every-scale
-          // look real clouds have.
+          // Fractional Brownian motion: each octave higher-frequency and
+          // lower-amplitude than the last — a single octave of simplex
+          // noise looks like uniform blobs, this layering is what gives it
+          // the wispy, detailed-at-every-scale look real clouds have. See
+          // fbmOctaves()'s own comment for why the octave count is a
+          // quality-tier constant baked in here rather than a uniform.
           float fbm(vec3 p) {
             float value = 0.0;
             float amplitude = 0.5;
-            for (int i = 0; i < 5; i++) {
+            for (int i = 0; i < ${fbmOctaves(quality)}; i++) {
               value += amplitude * snoise(p);
               p *= 2.0;
               amplitude *= 0.5;
@@ -210,16 +251,13 @@ export function Clouds({
             // float32-precision-safe regardless of session length/speed.
             float wrappedTime = mod(uTime, 200000.0);
             vec3 samplePoint = vNormal * ${CLOUD_NOISE_SCALE} + vec3(wrappedTime * ${CLOUD_DRIFT_SPEED}, 0.0, 0.0);
-            // Domain warp — see CLOUD_WARP_STRENGTH's own comment. Each
-            // component of the offset comes from the same fbm sampled at a
-            // large, arbitrary fixed shift so the three are decorrelated
-            // from each other and from the un-warped field itself, rather
-            // than all three tracking the same values.
-            vec3 warpOffset = vec3(
-              fbm(samplePoint + vec3(37.2, 11.4, 5.1)),
-              fbm(samplePoint + vec3(3.5, 91.2, 22.8)),
-              fbm(samplePoint + vec3(71.1, 4.9, 63.3))
-            );
+            // Domain warp — see CLOUD_WARP_STRENGTH's own comment and
+            // warpOffsetGlsl()'s own comment for why its cost varies by
+            // quality tier. Each component of the offset comes from noise
+            // sampled at a large, arbitrary fixed shift so the three are
+            // decorrelated from each other and from the un-warped field
+            // itself, rather than all three tracking the same values.
+            ${warpOffsetGlsl(quality)}
             vec3 warpedPoint = samplePoint + warpOffset * ${CLOUD_WARP_STRENGTH};
             // fbm's output ranges roughly [-1, 1]; remap to [0, 1] before
             // thresholding below.

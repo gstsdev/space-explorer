@@ -20,6 +20,7 @@ import { hoverCursor } from "./sceneCommon";
 import type { OnFocus } from "./sceneCommon";
 import { sunOcclusionBodies } from "./sunProperties";
 import type { OcclusionBody } from "./sunProperties";
+import type { Quality } from "./quality";
 import { Atmosphere } from "./Planet/Atmosphere";
 import { Clouds } from "./Planet/Clouds";
 import { PlanetRing } from "./Planet/PlanetRing";
@@ -163,6 +164,10 @@ export type PlanetProps = {
   ring?: PlanetRingData;
   atmosphere?: PlanetAtmosphereData;
   clouds?: PlanetCloudsData;
+  // Only meaningful when clouds is set (only ever Earth) — see Clouds'
+  // own comment for why this governs shader complexity rather than being a
+  // general "mobile mode".
+  quality: Quality;
   showOrbit: boolean;
   showPlaceholder: boolean;
   showLabel: boolean;
@@ -206,6 +211,7 @@ export function Planet({
   ring,
   atmosphere,
   clouds,
+  quality,
   showOrbit,
   showPlaceholder,
   showLabel,
@@ -530,7 +536,19 @@ export function Planet({
           />
         ) : null}
         {clouds ? (
-          <Clouds clouds={clouds} radius={radius} sunDirection={localSunDirection} meshRef={cloudsMesh} />
+          // Keyed on quality: a tier change should recompile the shader
+          // from fresh GLSL source (fbm's octave count/warp cost are baked
+          // in as literals, not uniforms — see Clouds' own comment), which
+          // is simplest as a full remount rather than hot-patching a live
+          // ShaderMaterial's source.
+          <Clouds
+            key={quality}
+            clouds={clouds}
+            radius={radius}
+            sunDirection={localSunDirection}
+            meshRef={cloudsMesh}
+            quality={quality}
+          />
         ) : null}
         {showLabel ? <BodyLabel id={id} selected={selected} /> : null}
         {children}

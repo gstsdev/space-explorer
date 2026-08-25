@@ -5,18 +5,21 @@ import type { OnFocus } from "./sceneCommon";
 import { Planet } from "./Planet";
 import { Moon } from "./Moon";
 import { Sun } from "./Sun";
+import type { Quality } from "./quality";
 
 export function Scene({
   selectedId,
   showOrbits,
   showPlaceholders,
   showLabels,
+  quality,
   onFocus,
 }: {
   selectedId: string | null;
   showOrbits: boolean;
   showPlaceholders: boolean;
   showLabels: boolean;
+  quality: Quality;
   onFocus: OnFocus;
 }) {
   // Shared with Earth's own Planet instance below (moonShadowCaster) so its
@@ -57,6 +60,7 @@ export function Scene({
           ring={planet.ring}
           atmosphere={planet.atmosphere}
           clouds={planet.clouds}
+          quality={quality}
           showOrbit={showOrbits}
           showPlaceholder={showPlaceholders}
           showLabel={showLabels}

@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import type { Object3D } from "three";
 import { Scene } from "./Scene";
@@ -9,6 +9,15 @@ import { StatsPanel } from "./StatsPanel";
 import { Skybox } from "./Skybox";
 import { ViewControls } from "./ViewControls";
 import { SUN_DATA } from "./astronomy";
+import type { QualityPreference } from "./quality";
+import { getStoredQualityPreference, resolveQuality, setStoredQualityPreference } from "./quality";
+
+// Screen-space background, never viewed up close — the low tier trades
+// resolution for GPU memory a weak mobile GPU can't spare (see quality.ts
+// and Skybox's own comment on why this can't just be swapped in place
+// without a `key`).
+const SKYBOX_URL_HIGH = "/textures/skybox/milkyway.jpg";
+const SKYBOX_URL_LOW = "/textures/skybox/milkyway-low.jpg";
 
 export default function App() {
   const focusTarget = useRef<Object3D | null>(null);
@@ -21,6 +30,18 @@ export default function App() {
   const [showPlaceholders, setShowPlaceholders] = useState(true);
   const [showStars, setShowStars] = useState(true);
   const [pictureMode, setPictureMode] = useState(false);
+  const [qualityPreference, setQualityPreference] = useState<QualityPreference>(
+    getStoredQualityPreference,
+  );
+  const quality = useMemo(
+    () => resolveQuality(qualityPreference),
+    [qualityPreference],
+  );
+
+  const handleQualityPreferenceChange = (preference: QualityPreference) => {
+    setQualityPreference(preference);
+    setStoredQualityPreference(preference);
+  };
 
   useEffect(() => {
     if (!pictureMode) return;
@@ -44,13 +65,21 @@ export default function App() {
         <color attach="background" args={["#000000"]} />
         <ambientLight intensity={0.15} />
         <Suspense fallback={null}>
-          <Skybox url="/textures/skybox/milkyway.jpg" visible={showStars} />
+          {/* Keyed on quality: swapping the url on a live Skybox wouldn't
+          actually take effect (see that component's own useRef caveat), so
+          a tier change remounts it fresh instead. */}
+          <Skybox
+            key={quality}
+            url={quality === "high" ? SKYBOX_URL_HIGH : SKYBOX_URL_LOW}
+            visible={showStars}
+          />
         </Suspense>
         <Scene
           selectedId={selectedId}
           showOrbits={showOrbits && !pictureMode}
           showPlaceholders={showPlaceholders && !pictureMode}
           showLabels={!pictureMode}
+          quality={quality}
           onFocus={(object, id) => {
             focusTarget.current = object;
             setSelectedId(id);
@@ -70,6 +99,8 @@ export default function App() {
             onTogglePlaceholders={() => setShowPlaceholders((value) => !value)}
             showStars={showStars}
             onToggleStars={() => setShowStars((value) => !value)}
+            qualityPreference={qualityPreference}
+            onChangeQualityPreference={handleQualityPreferenceChange}
             onEnterPictureMode={() => setPictureMode(true)}
           />
         </>

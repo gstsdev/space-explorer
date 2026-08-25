@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import { Orbit, CircleDot, Sparkles, Camera } from "lucide-react";
+import type { QualityPreference } from "./quality";
 
 const buttonBaseStyle: CSSProperties = {
   display: "flex",
@@ -41,6 +42,61 @@ function ToggleButton({
   );
 }
 
+const QUALITY_OPTIONS: { preference: QualityPreference; label: string }[] = [
+  { preference: "auto", label: "Auto" },
+  { preference: "low", label: "Low" },
+  { preference: "high", label: "High" },
+];
+
+// Render quality (Clouds shader detail + skybox resolution — see
+// quality.ts). The only non-boolean control here, so it gets its own
+// segmented row of text buttons rather than an icon toggle.
+function QualitySegment({
+  value,
+  onChange,
+}: {
+  value: QualityPreference;
+  onChange: (preference: QualityPreference) => void;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Render quality"
+      title="Render quality (Auto detects device capability)"
+      style={{
+        display: "flex",
+        borderRadius: 8,
+        overflow: "hidden",
+      }}
+    >
+      {QUALITY_OPTIONS.map(({ preference, label }) => {
+        const active = value === preference;
+        return (
+          <button
+            key={preference}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(preference)}
+            style={{
+              border: "none",
+              cursor: "pointer",
+              padding: "0 10px",
+              height: 36,
+              fontSize: 12,
+              fontWeight: 600,
+              background: active ? "rgba(255, 255, 255, 0.15)" : "transparent",
+              color: active ? "#ffffff" : "rgba(255, 255, 255, 0.4)",
+            }}
+          >
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function ViewControls({
   showOrbits,
   onToggleOrbits,
@@ -48,6 +104,8 @@ export function ViewControls({
   onTogglePlaceholders,
   showStars,
   onToggleStars,
+  qualityPreference,
+  onChangeQualityPreference,
   onEnterPictureMode,
 }: {
   showOrbits: boolean;
@@ -56,6 +114,8 @@ export function ViewControls({
   onTogglePlaceholders: () => void;
   showStars: boolean;
   onToggleStars: () => void;
+  qualityPreference: QualityPreference;
+  onChangeQualityPreference: (preference: QualityPreference) => void;
   onEnterPictureMode: () => void;
 }) {
   return (
@@ -81,6 +141,7 @@ export function ViewControls({
       <ToggleButton active={showStars} label="Toggle stars/Milky Way" onClick={onToggleStars}>
         <Sparkles size={18} strokeWidth={2} />
       </ToggleButton>
+      <QualitySegment value={qualityPreference} onChange={onChangeQualityPreference} />
       <ToggleButton active label="Picture mode (Esc to exit)" onClick={onEnterPictureMode}>
         <Camera size={18} strokeWidth={2} />
       </ToggleButton>
