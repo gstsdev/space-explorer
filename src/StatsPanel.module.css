@@ -1,0 +1,41 @@
+.panel {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 200px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  color: #fff;
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+  user-select: none;
+}
+
+/* Below this width, ViewControls (top: 16px, 44px tall) sits above this
+   panel instead of beside it, so push down past it plus the same 16px
+   spacing it already uses above itself. */
+@media (max-width: 580px) {
+  .panel {
+    top: 76px;
+  }
+}
+
+.title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.label {
+  color: rgba(255, 255, 255, 0.6);
+}

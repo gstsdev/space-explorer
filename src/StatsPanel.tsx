@@ -1,4 +1,3 @@
-import type { CSSProperties } from "react";
 import {
   EARTH_MOON_DATA,
   KM_PER_AU,
@@ -9,6 +8,7 @@ import {
   PLANETS,
   SUN_DATA,
 } from "./astronomy";
+import styles from "./StatsPanel.module.css";
 
 function capitalize(id: string) {
   return id[0].toUpperCase() + id.slice(1);
@@ -33,16 +33,10 @@ function formatRotationDirectionFromTilt(degrees?: number) {
   return absDeg > 90 ? "Retrograde" : "Prograde";
 }
 
-const rowStyle: CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 16,
-};
-
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div style={rowStyle}>
-      <span style={{ color: "rgba(255, 255, 255, 0.6)" }}>{label}</span>
+    <div className={styles.row}>
+      <span className={styles.label}>{label}</span>
       <span>{value}</span>
     </div>
   );
@@ -56,26 +50,8 @@ export function StatsPanel({ selectedId }: { selectedId: string | null }) {
   if (!body) return null;
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        top: 16,
-        left: 16,
-        display: "flex",
-        flexDirection: "column",
-        gap: 6,
-        minWidth: 200,
-        padding: "12px 16px",
-        borderRadius: 10,
-        background: "rgba(0, 0, 0, 0.55)",
-        backdropFilter: "blur(6px)",
-        color: "#fff",
-        fontFamily: "system-ui, sans-serif",
-        fontSize: 13,
-        userSelect: "none",
-      }}
-    >
-      <div style={{ fontSize: 15, fontWeight: 700 }}>{capitalize(body.id)}</div>
+    <div className={styles.panel}>
+      <div className={styles.title}>{capitalize(body.id)}</div>
       <Stat
         label="Radius"
         value={`${Math.round(body.radiusKm).toLocaleString()} km`}
