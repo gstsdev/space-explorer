@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { simulation } from "./simulation";
+import { simulation } from "../simulation";
 import {
   DEFAULT_SPEED_EXPONENT,
   J2000_EPOCH_MS,
   MAX_SPEED_EXPONENT,
   SECONDS_PER_YEAR,
   secondsSinceJ2000,
-} from "./astronomy";
+} from "../astronomy";
+import styles from "./SpeedControl.module.css";
 
 // simulation.speed is "simulated seconds elapsed per real second" — this
 // expresses that as a duration in whatever unit reads best, so 1x shows as
@@ -71,7 +72,9 @@ export function SpeedControl() {
   }, [isEditingDate]);
 
   const startEditingDate = () => {
-    setDateInputValue(toDatetimeLocalValue(new Date(J2000_EPOCH_MS + simulation.time * 1000)));
+    setDateInputValue(
+      toDatetimeLocalValue(new Date(J2000_EPOCH_MS + simulation.time * 1000)),
+    );
     setIsEditingDate(true);
   };
 
@@ -84,26 +87,7 @@ export function SpeedControl() {
   };
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        left: "50%",
-        bottom: 24,
-        transform: "translateX(-50%)",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 6,
-        padding: "10px 16px",
-        borderRadius: 10,
-        background: "rgba(0, 0, 0, 0.55)",
-        backdropFilter: "blur(6px)",
-        color: "#fff",
-        fontFamily: "system-ui, sans-serif",
-        fontSize: 13,
-        userSelect: "none",
-      }}
-    >
+    <div className={styles.container}>
       {isEditingDate ? (
         <input
           type="datetime-local"
@@ -116,25 +100,19 @@ export function SpeedControl() {
             if (event.key === "Enter") commitDateEdit();
             if (event.key === "Escape") setIsEditingDate(false);
           }}
-          style={{
-            background: "rgba(255, 255, 255, 0.1)",
-            color: "#fff",
-            border: "1px solid rgba(255, 255, 255, 0.3)",
-            borderRadius: 4,
-            fontFamily: "inherit",
-            fontSize: 12,
-            colorScheme: "dark",
-          }}
+          className={styles.dateInput}
         />
       ) : (
         <div
           ref={dateRef}
           onClick={startEditingDate}
           title="Click to set a custom date/time"
-          style={{ opacity: 0.7, cursor: "pointer" }}
+          className={styles.dateDisplay}
         />
       )}
-      <label htmlFor="speed-slider">Time scale: {formatSpeed(10 ** exponent)}</label>
+      <label htmlFor="speed-slider">
+        Time scale: {formatSpeed(10 ** exponent)}
+      </label>
       <input
         id="speed-slider"
         type="range"
@@ -147,7 +125,7 @@ export function SpeedControl() {
           setExponent(next);
           simulation.speed = 10 ** next;
         }}
-        style={{ width: 220 }}
+        className={styles.speedSlider}
       />
     </div>
   );

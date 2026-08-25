@@ -1,0 +1,51 @@
+.container {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+}
+
+.toggleButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.toggleButton[data-active="true"] {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
+
+.qualitySegment {
+  display: flex;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.qualityButton {
+  border: none;
+  cursor: pointer;
+  padding: 0 10px;
+  height: 36px;
+  font-size: 12px;
+  font-weight: 600;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.qualityButton[data-active="true"] {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}

@@ -1,17 +1,7 @@
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Orbit, CircleDot, Sparkles, Camera } from "lucide-react";
-import type { QualityPreference } from "./quality";
-
-const buttonBaseStyle: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  width: 36,
-  height: 36,
-  borderRadius: 8,
-  border: "none",
-  cursor: "pointer",
-};
+import type { QualityPreference } from "../quality";
+import styles from "./ViewControls.module.css";
 
 function ToggleButton({
   active,
@@ -31,11 +21,8 @@ function ToggleButton({
       aria-label={label}
       aria-pressed={active}
       title={label}
-      style={{
-        ...buttonBaseStyle,
-        background: active ? "rgba(255, 255, 255, 0.15)" : "transparent",
-        color: active ? "#ffffff" : "rgba(255, 255, 255, 0.4)",
-      }}
+      data-active={active}
+      className={styles.toggleButton}
     >
       {children}
     </button>
@@ -63,11 +50,7 @@ function QualitySegment({
       role="radiogroup"
       aria-label="Render quality"
       title="Render quality (Auto detects device capability)"
-      style={{
-        display: "flex",
-        borderRadius: 8,
-        overflow: "hidden",
-      }}
+      className={styles.qualitySegment}
     >
       {QUALITY_OPTIONS.map(({ preference, label }) => {
         const active = value === preference;
@@ -78,16 +61,8 @@ function QualitySegment({
             role="radio"
             aria-checked={active}
             onClick={() => onChange(preference)}
-            style={{
-              border: "none",
-              cursor: "pointer",
-              padding: "0 10px",
-              height: 36,
-              fontSize: 12,
-              fontWeight: 600,
-              background: active ? "rgba(255, 255, 255, 0.15)" : "transparent",
-              color: active ? "#ffffff" : "rgba(255, 255, 255, 0.4)",
-            }}
+            data-active={active}
+            className={styles.qualityButton}
           >
             {label}
           </button>
@@ -119,30 +94,37 @@ export function ViewControls({
   onEnterPictureMode: () => void;
 }) {
   return (
-    <div
-      style={{
-        position: "fixed",
-        top: 16,
-        right: 16,
-        display: "flex",
-        gap: 4,
-        padding: 4,
-        borderRadius: 10,
-        background: "rgba(0, 0, 0, 0.55)",
-        backdropFilter: "blur(6px)",
-      }}
-    >
-      <ToggleButton active={showOrbits} label="Toggle orbit lines" onClick={onToggleOrbits}>
+    <div className={styles.container}>
+      <ToggleButton
+        active={showOrbits}
+        label="Toggle orbit lines"
+        onClick={onToggleOrbits}
+      >
         <Orbit size={18} strokeWidth={2} />
       </ToggleButton>
-      <ToggleButton active={showPlaceholders} label="Toggle planet indicators" onClick={onTogglePlaceholders}>
+      <ToggleButton
+        active={showPlaceholders}
+        label="Toggle planet indicators"
+        onClick={onTogglePlaceholders}
+      >
         <CircleDot size={18} strokeWidth={2} />
       </ToggleButton>
-      <ToggleButton active={showStars} label="Toggle stars/Milky Way" onClick={onToggleStars}>
+      <ToggleButton
+        active={showStars}
+        label="Toggle stars/Milky Way"
+        onClick={onToggleStars}
+      >
         <Sparkles size={18} strokeWidth={2} />
       </ToggleButton>
-      <QualitySegment value={qualityPreference} onChange={onChangeQualityPreference} />
-      <ToggleButton active label="Picture mode (Esc to exit)" onClick={onEnterPictureMode}>
+      <QualitySegment
+        value={qualityPreference}
+        onChange={onChangeQualityPreference}
+      />
+      <ToggleButton
+        active
+        label="Picture mode (Esc to exit)"
+        onClick={onEnterPictureMode}
+      >
         <Camera size={18} strokeWidth={2} />
       </ToggleButton>
     </div>

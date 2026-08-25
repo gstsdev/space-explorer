@@ -7,7 +7,7 @@ import {
   orbitalPeriodDays,
   PLANETS,
   SUN_DATA,
-} from "./astronomy";
+} from "../astronomy";
 import styles from "./StatsPanel.module.css";
 
 function capitalize(id: string) {
@@ -45,7 +45,8 @@ function Stat({ label, value }: { label: string; value: string }) {
 export function StatsPanel({ selectedId }: { selectedId: string | null }) {
   const isSun = selectedId === SUN_DATA.id;
   const isMoon = selectedId === EARTH_MOON_DATA.id;
-  const planet = isSun || isMoon ? undefined : PLANETS.find((p) => p.id === selectedId);
+  const planet =
+    isSun || isMoon ? undefined : PLANETS.find((p) => p.id === selectedId);
   const body = isSun ? SUN_DATA : isMoon ? EARTH_MOON_DATA : planet;
   if (!body) return null;
 
@@ -67,16 +68,34 @@ export function StatsPanel({ selectedId }: { selectedId: string | null }) {
             label="Orbital period"
             value={formatPeriod(orbitalPeriodDays(planet.semiMajorAxisKm))}
           />
-          <Stat label="Rotation period" value={formatPeriod(planet.rotationPeriodDays)} />
-          <Stat label="Rotation direction" value={formatRotationDirectionFromTilt(planet.axialTiltDegrees)} />
-          <Stat label="Axial tilt" value={formatAxialTilt(planet.axialTiltDegrees)} />
+          <Stat
+            label="Rotation period"
+            value={formatPeriod(planet.rotationPeriodDays)}
+          />
+          <Stat
+            label="Rotation direction"
+            value={formatRotationDirectionFromTilt(planet.axialTiltDegrees)}
+          />
+          <Stat
+            label="Axial tilt"
+            value={formatAxialTilt(planet.axialTiltDegrees)}
+          />
         </>
       )}
       {isMoon && (
         <>
-          <Stat label="Distance from Earth" value={`${Math.round(MOON_MEAN_DISTANCE_KM).toLocaleString()} km`} />
-          <Stat label="Eccentricity" value={MOON_MEAN_ECCENTRICITY.toFixed(4)} />
-          <Stat label="Orbital period" value={formatPeriod(MOON_SIDEREAL_MONTH_DAYS)} />
+          <Stat
+            label="Distance from Earth"
+            value={`${Math.round(MOON_MEAN_DISTANCE_KM).toLocaleString()} km`}
+          />
+          <Stat
+            label="Eccentricity"
+            value={MOON_MEAN_ECCENTRICITY.toFixed(4)}
+          />
+          <Stat
+            label="Orbital period"
+            value={formatPeriod(MOON_SIDEREAL_MONTH_DAYS)}
+          />
           <Stat label="Rotation" value="Tidally locked" />
         </>
       )}

@@ -4,13 +4,17 @@ import type { Object3D } from "three";
 import { Scene } from "./Scene";
 import { CAMERA_FAR, CameraRig } from "./CameraRig";
 import { SimulationClock } from "./simulation";
-import { SpeedControl } from "./SpeedControl";
-import { StatsPanel } from "./StatsPanel";
+import { SpeedControl } from "./ui/SpeedControl";
+import { StatsPanel } from "./ui/StatsPanel";
 import { Skybox } from "./Skybox";
-import { ViewControls } from "./ViewControls";
+import { ViewControls } from "./ui/ViewControls";
 import { SUN_DATA } from "./astronomy";
 import type { QualityPreference } from "./quality";
-import { getStoredQualityPreference, resolveQuality, setStoredQualityPreference } from "./quality";
+import {
+  getStoredQualityPreference,
+  resolveQuality,
+  setStoredQualityPreference,
+} from "./quality";
 
 // Screen-space background, never viewed up close — the low tier trades
 // resolution for GPU memory a weak mobile GPU can't spare (see quality.ts
@@ -58,7 +62,12 @@ export default function App() {
       orbit, ~4515 units out, in real scale) — logarithmicDepthBuffer avoids
       z-fighting across that range. */}
       <Canvas
-        camera={{ position: [0, 2, 5.5], fov: 50, near: 0.001, far: CAMERA_FAR }}
+        camera={{
+          position: [0, 2, 5.5],
+          fov: 50,
+          near: 0.001,
+          far: CAMERA_FAR,
+        }}
         gl={{ logarithmicDepthBuffer: true }}
       >
         {/* Plain black fallback while the skybox image loads (or if it fails) — */}
