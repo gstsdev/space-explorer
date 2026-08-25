@@ -19,11 +19,24 @@ import { MIN_VIEW_MULTIPLIER, SUN_RADIUS, VIEW_MULTIPLIER } from "./astronomy";
 const DEFAULT_FOCUS_DISTANCE = SUN_RADIUS * VIEW_MULTIPLIER;
 const DEFAULT_MIN_DISTANCE = SUN_RADIUS * MIN_VIEW_MULTIPLIER;
 
-// How long, after clicking a body, the camera actively dollies toward it.
-// After this, distance is handed back to the user's own scroll-zoom —
-// otherwise we'd fight every zoom attempt by continuously pulling the
-// camera back to focusDistance.
-const TRANSITION_DURATION = 1.5;
+// How close (as a fraction of the target distance) the camera must get to
+// desiredDistance before a focus transition is considered done and control
+// is handed back to the user's own scroll-zoom — otherwise we'd fight every
+// zoom attempt by continuously pulling the camera back to focusDistance.
+// Gated on actual convergence rather than a fixed real-time cutoff: the
+// dolly below is exponential decay, which converges to a fixed *fraction*
+// of the starting gap, not a fixed absolute distance — a fixed-time cutoff
+// left a residual proportional to how far the camera started from (e.g.
+// zoomed out near Saturn, or all the way to Neptune), which then froze in
+// place once the cutoff passed. That residual can dwarf a small planet's
+// own focusDistance even though it's a tiny fraction of the original gap —
+// the "farther the start, the farther the landing" bug this replaces.
+const CONVERGENCE_EPSILON = 0.01;
+// Safety cap only: convergence above normally finishes well under this,
+// even for the most extreme jump (zoomed to maxDistance, then focusing the
+// smallest body) — this just guarantees control always eventually returns
+// to the user, however degenerate the starting state.
+const MAX_TRANSITION_DURATION = 5;
 
 // OrbitControls.zoomSpeed multiplies the dolly scale applied per wheel
 // event (regardless of that event's deltaY magnitude — see
@@ -64,6 +77,7 @@ export function CameraRig({ focusTarget }: { focusTarget: RefObject<Object3D | n
   const targetDelta = useRef(new Vector3());
   const previousTarget = useRef<Object3D | null>(null);
   const focusChangedAt = useRef(0);
+  const transitioning = useRef(false);
   const domElement = useThree((state) => state.gl.domElement);
 
   useEffect(() => {
@@ -92,6 +106,7 @@ export function CameraRig({ focusTarget }: { focusTarget: RefObject<Object3D | n
     if (target !== previousTarget.current) {
       previousTarget.current = target;
       focusChangedAt.current = state.clock.elapsedTime;
+      transitioning.current = true;
     }
 
     if (target) target.getWorldPosition(desiredTarget.current);
@@ -115,7 +130,7 @@ export function CameraRig({ focusTarget }: { focusTarget: RefObject<Object3D | n
     state.camera.position.add(targetDelta.current);
 
     const smoothing = 1 - Math.pow(0.001, delta);
-    if (state.clock.elapsedTime - focusChangedAt.current < TRANSITION_DURATION) {
+    if (transitioning.current) {
       const desiredDistance =
         (target?.userData.focusDistance as number | undefined) ?? DEFAULT_FOCUS_DISTANCE;
       const currentDistance = state.camera.position.distanceTo(c.target);
@@ -123,6 +138,12 @@ export function CameraRig({ focusTarget }: { focusTarget: RefObject<Object3D | n
 
       direction.current.copy(state.camera.position).sub(c.target).normalize();
       state.camera.position.copy(c.target).addScaledVector(direction.current, nextDistance);
+
+      const relativeError = Math.abs(nextDistance - desiredDistance) / desiredDistance;
+      const elapsed = state.clock.elapsedTime - focusChangedAt.current;
+      if (relativeError < CONVERGENCE_EPSILON || elapsed > MAX_TRANSITION_DURATION) {
+        transitioning.current = false;
+      }
     }
 
     // Must stay dynamic, not a fixed prop: a fixed minDistance small enough
