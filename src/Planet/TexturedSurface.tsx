@@ -189,6 +189,21 @@ export function TexturedSurface({
       // surfaceTint brought the diffuse back into a normal range (Mercury).
       specular={maps.specularMap ? "#333333" : "#000000"}
       shininess={15}
+      // Three's default customProgramCacheKey() is just onBeforeCompile.
+      // toString() — identical source text for every planet, since they all
+      // share this one component. Without overriding it, planets whose
+      // onBeforeCompile takes a *different* branch below (nightMap/
+      // atmosphere/sunsetColor/eclipseShadow present or not) still hash to
+      // the same WebGL program cache key, so whichever planet's material
+      // compiles first "wins" the shared GPU program for all of them —
+      // including ones that never set the resulting uniforms (e.g. Mercury
+      // reusing a program compiled for Venus's atmosphere glow), leaving
+      // those uniform slots holding another planet's stale leftover value.
+      // This key must vary with every prop that changes which branch below
+      // actually runs, so each distinct shader shape gets its own program.
+      customProgramCacheKey={() =>
+        `nightMap:${Boolean(maps.nightMap)}|atmosphere:${Boolean(atmosphere)}|sunset:${Boolean(atmosphere?.sunsetColor)}|eclipse:${Boolean(eclipseShadow)}`
+      }
       onBeforeCompile={(shader) => {
         if (!maps.nightMap && !atmosphere && !eclipseShadow) return;
 
