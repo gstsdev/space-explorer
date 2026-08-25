@@ -3,7 +3,7 @@ import type { RefObject } from "react";
 import { useFrame } from "@react-three/fiber";
 import { BufferAttribute, ClampToEdgeWrapping, DoubleSide, RepeatWrapping, RingGeometry, Vector3 } from "three";
 import { useTexture } from "@react-three/drei";
-import type { Quaternion } from "three";
+import type { Mesh, Quaternion } from "three";
 import type { PlanetRingData } from "../astronomy";
 import { FRAME_PRIORITY } from "../framePriority";
 
@@ -12,11 +12,17 @@ export function PlanetRing({
   ringQuaternion,
   radius,
   sunDirection,
+  meshRef,
 }: {
   ring: PlanetRingData;
   ringQuaternion: Quaternion;
   radius: number;
   sunDirection: RefObject<Vector3>;
+  // Planet's own LOD/visibility useFrame writes this mesh's .visible
+  // directly (see that ref's own comment on Planet), same as Atmosphere and
+  // Clouds — without this the ring stayed visible at true scale even after
+  // the surface itself had swapped to its placeholder billboard.
+  meshRef: RefObject<Mesh | null>;
 }) {
   const texture = useTexture(ring.texture);
   const textureRef = useRef(texture);
@@ -66,7 +72,7 @@ export function PlanetRing({
   }, FRAME_PRIORITY.updateVisibility);
 
   return (
-    <mesh geometry={ringGeometry} quaternion={ringQuaternion}>
+    <mesh ref={meshRef} geometry={ringGeometry} quaternion={ringQuaternion}>
       <meshPhongMaterial
         map={texture}
         transparent

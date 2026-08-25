@@ -227,15 +227,16 @@ export function Planet({
   // constant size on screen, like a marker on a map — until we're close
   // enough to see the real mesh, at which point we swap to that instead.
   const placeholder = useRef<Mesh>(null);
-  // Atmosphere/Clouds are separate meshes, each real (if thin) 3D geometry
-  // rather than a billboard placeholder — nothing else keeps them in sync
-  // with the real surface mesh's own closeEnough/showReal LOD swap below,
-  // so without these they'd stay visible at their true (tiny) real-scale
-  // size even once the surface itself has swapped to the placeholder,
-  // showing as a small but clearly-visible shell floating around what's
-  // now just a flat dot.
+  // Atmosphere/Clouds/Ring are separate meshes, each real (if thin) 3D
+  // geometry rather than a billboard placeholder — nothing else keeps them
+  // in sync with the real surface mesh's own closeEnough/showReal LOD swap
+  // below, so without these they'd stay visible at their true (tiny)
+  // real-scale size even once the surface itself has swapped to the
+  // placeholder, showing as a small but clearly-visible shell/ring floating
+  // around what's now just a flat dot.
   const atmosphereMesh = useRef<Mesh>(null);
   const cloudsMesh = useRef<Mesh>(null);
+  const ringMesh = useRef<Mesh>(null);
   // Direction to the sun in this mesh's own OBJECT space (not world/view
   // space) — used by TexturedSurface's night-lights shader. Object space
   // means it's correct regardless of camera timing, and it naturally
@@ -445,6 +446,7 @@ export function Planet({
     if (mesh.current) mesh.current.visible = showReal;
     if (atmosphereMesh.current) atmosphereMesh.current.visible = showReal;
     if (cloudsMesh.current) cloudsMesh.current.visible = showReal;
+    if (ringMesh.current) ringMesh.current.visible = showReal;
     if (placeholder.current) {
       placeholder.current.visible = !closeEnough && showPlaceholder;
       placeholder.current.scale.setScalar(distance * PLACEHOLDER_SIZE);
@@ -524,6 +526,7 @@ export function Planet({
             ringQuaternion={ringQuaternion}
             radius={radius}
             sunDirection={ringSunDirection}
+            meshRef={ringMesh}
           />
         ) : null}
         {atmosphere ? (
