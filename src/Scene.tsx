@@ -5,6 +5,7 @@ import type { OnFocus } from "./sceneCommon";
 import { Planet } from "./Planet";
 import { Moon } from "./Moon";
 import { Sun } from "./Sun";
+import { AsteroidBelt } from "./AsteroidBelt";
 import type { Quality } from "./quality";
 
 export function Scene({
@@ -37,6 +38,7 @@ export function Scene({
         showLabel={showLabels}
         onFocus={onFocus}
       />
+      <AsteroidBelt />
       {PLANETS.map((planet) => (
         <Planet
           key={planet.id}

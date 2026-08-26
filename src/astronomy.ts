@@ -848,3 +848,43 @@ export const EARTH_MOON_DATA: MoonData = {
   // PlanetData.surfaceTint's own comment.
   surfaceTint: "#b0b0b0",
 };
+
+export type AsteroidBeltData = {
+  color: string;
+  innerRadiusKm: number;
+  outerRadiusKm: number;
+};
+
+// Real: the radial extent is a commonly-cited round figure (~2.1-3.3 AU),
+// roughly the 4:1/2:1 Jupiter mean-motion (Kirkwood-gap) resonances that
+// bound the bulk of the real population — Ceres, the belt's largest body,
+// sits at a real 2.77 AU, close to this range's own 2.7 AU midpoint, a
+// reasonable sanity check. AsteroidBelt.tsx's per-particle rotation (inner
+// edge visibly outpacing the outer edge) is driven by the same real
+// Kepler's-third-law constant (GM_SUN_KM3_S2 above) every planet's own
+// period already uses, and its per-particle sun-relative shading (see that
+// file's own comment) is real too, in that it responds to the sun's actual
+// position rather than being a fixed lit/dark split.
+// color is a rough average for the belt's most common composition (~75%
+// C-type/carbonaceous: dark, grayish-brown, low albedo ~0.03-0.09, similar
+// to asphalt) rather than the lighter, redder S-type (~17%, concentrated
+// closer to Mars) this used to be tuned toward — not a per-particle
+// spectral-type split (real asteroids vary considerably; this is one
+// averaged color for the whole belt).
+// Stylized beyond the color: rendered as a point cloud (AsteroidBelt.tsx)
+// standing in for ~1.2 million real cataloged asteroids' actual positions
+// — same "no practical closed form for this many individual bodies"
+// reasoning as PlanetCloudsData's own comment, just because of data volume
+// here rather than chaos — with real vertical/inclination scatter
+// approximated (see that file's BELT_HALF_THICKNESS_AU) rather than
+// reproducing a real inclination distribution. The belt's overall
+// visibility itself is also an exaggeration: real asteroids are sparse and
+// dim enough that the actual belt looks like empty space in every real
+// spacecraft photo — this is a legibility choice, the same kind this app
+// already makes for placeholders (PLACEHOLDER_SIZE) and atmosphere glow
+// shells (ATMOSPHERE_HEIGHT_EXAGGERATION), not a claim about real density.
+export const MAIN_BELT_DATA: AsteroidBeltData = {
+  color: "#6e6860",
+  innerRadiusKm: 2.1 * KM_PER_AU,
+  outerRadiusKm: 3.3 * KM_PER_AU,
+};
