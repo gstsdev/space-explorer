@@ -91,6 +91,12 @@ export function CameraRig({ focusTarget }: { focusTarget: RefObject<Object3D | n
       accel = now - lastWheelTime < ZOOM_BURST_WINDOW_MS ? Math.min(accel + ZOOM_ACCEL_STEP, MAX_ZOOM_ACCEL) : 0;
       lastWheelTime = now;
       c.zoomSpeed = BASE_ZOOM_SPEED + accel;
+      // A deliberate scroll is the user asking for manual control right
+      // now — don't make them fight the focus dolly until it converges or
+      // times out. Without this, scrolling out mid-transition just gets
+      // overwritten next frame by the dolly pulling back toward
+      // desiredDistance, since that runs unconditionally while transitioning.
+      transitioning.current = false;
     };
 
     domElement.addEventListener("wheel", handleWheel, { passive: true });
