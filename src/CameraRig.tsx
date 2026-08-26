@@ -66,7 +66,18 @@ const ZOOM_BURST_WINDOW_MS = 220;
 // maxDistance + 4566 + 4566 units from the camera. Undershooting this
 // clips the orbit line (not a camera-angle bug — cost us a while to track
 // down the first time).
-const MIN_NEAR = 0.001;
+// Fraction of the current target's own minDistance (itself already scaled
+// per-body — see c.minDistance below) used as the near-plane floor. A
+// fixed absolute floor here has the same problem every other fixed
+// distance in this file was designed around: true-scale bodies span
+// orders of magnitude, so a floor sized for e.g. the Moon (radius ~1737
+// km) clips straight into Ceres' own near-facing surface at its closest
+// allowed zoom (radius ~470 km) — the ring/donut artifact this replaced.
+// 0.1 leaves the near plane at ~30% of a body's own radius while the
+// nearest visible surface sits at ~2x its radius from the camera (at
+// minDistance = radius * MIN_VIEW_MULTIPLIER(3)) — a comfortable margin
+// that holds regardless of the target's absolute size.
+const MIN_NEAR_RATIO = 0.1;
 const NEAR_RATIO = 0.001;
 export const CAMERA_FAR = 30_000;
 
@@ -160,7 +171,10 @@ export function CameraRig({ focusTarget }: { focusTarget: RefObject<Object3D | n
     c.update();
 
     const camera = state.camera as PerspectiveCamera;
-    const nextNear = Math.max(MIN_NEAR, state.camera.position.distanceTo(c.target) * NEAR_RATIO);
+    const nextNear = Math.max(
+      c.minDistance * MIN_NEAR_RATIO,
+      state.camera.position.distanceTo(c.target) * NEAR_RATIO,
+    );
     if (camera.near !== nextNear) {
       camera.near = nextNear;
       camera.far = CAMERA_FAR;
