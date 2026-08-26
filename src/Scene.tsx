@@ -62,6 +62,7 @@ export function Scene({
           ring={planet.ring}
           atmosphere={planet.atmosphere}
           clouds={planet.clouds}
+          triaxialRadiiKm={planet.triaxialRadiiKm}
           quality={quality}
           showOrbit={showOrbits}
           showPlaceholder={showPlaceholders}

@@ -239,6 +239,17 @@ export type PlanetData = {
   ring?: PlanetRingData;
   atmosphere?: PlanetAtmosphereData;
   clouds?: PlanetCloudsData;
+  // Real triaxial semi-axes (km), [equatorial-long, polar/spin-axis,
+  // equatorial-short] — only for a body not close enough to round for the
+  // sphere-based simplification every other body here uses (radiusKm's own
+  // real oblateness is already ignored the same way for every planet, e.g.
+  // Earth/Jupiter/Saturn — reasonable there since it's a similarly small
+  // deviation; not reasonable for a body whose true shape is a genuine
+  // triaxial ellipsoid, like Vesta). Applied in Planet.tsx as a non-uniform
+  // scale on the mesh only — orbit position, placeholder LOD, and camera
+  // focus distance all still use the single radiusKm mean-radius
+  // approximation, same as every other approximation of that kind here.
+  triaxialRadiiKm?: [number, number, number];
 };
 
 // See PlanetAtmosphereData.scaleHeightKm's comment for why this exists.

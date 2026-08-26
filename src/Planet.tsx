@@ -164,6 +164,11 @@ export type PlanetProps = {
   ring?: PlanetRingData;
   atmosphere?: PlanetAtmosphereData;
   clouds?: PlanetCloudsData;
+  // See PlanetData.triaxialRadiiKm's own comment (astronomy.ts) — only set
+  // for a body genuinely non-spherical enough to need it (currently only
+  // Vesta). [equatorial-long, polar/spin-axis, equatorial-short] in km,
+  // applied below as a non-uniform scale on the mesh only.
+  triaxialRadiiKm?: [number, number, number];
   // Only meaningful when clouds is set (only ever Earth) — see Clouds'
   // own comment for why this governs shader complexity rather than being a
   // general "mobile mode".
@@ -211,6 +216,7 @@ export function Planet({
   ring,
   atmosphere,
   clouds,
+  triaxialRadiiKm,
   quality,
   showOrbit,
   showPlaceholder,
@@ -306,6 +312,15 @@ export function Planet({
     (2 * Math.PI) / (rotationPeriodDays * 24 * 60 * 60);
   // Distance at which the body's axial tilt crosses the "readable" threshold.
   const switchDistance = radius / ANGULAR_THRESHOLD;
+  // Non-uniform mesh scale for a genuinely non-spherical body (see
+  // PlanetProps.triaxialRadiiKm's own comment) — ratios against the same
+  // `radius` the sphereGeometry below is built with, so the geometry's
+  // radius-1-equivalent axes stretch to the real triaxial half-lengths.
+  // Every other body gets undefined here (mesh.scale stays the Three.js
+  // default of (1,1,1)).
+  const meshScale = triaxialRadiiKm
+    ? ([triaxialRadiiKm[0] / radiusKm, triaxialRadiiKm[1] / radiusKm, triaxialRadiiKm[2] / radiusKm] as const)
+    : undefined;
 
   // Trace the same ellipse the planet moves along, so the orbit path is
   // visible even though it's a static line (not an actual fading trail).
@@ -490,7 +505,7 @@ export function Planet({
           }
         }}
       >
-        <mesh ref={mesh} onClick={handleFocus} {...hoverCursor}>
+        <mesh ref={mesh} scale={meshScale} onClick={handleFocus} {...hoverCursor}>
           <sphereGeometry args={[radius, 100, 100]} />
           {textures ? (
             <Suspense fallback={<meshStandardMaterial color={color} roughness={0.7} metalness={0.1} />}>
