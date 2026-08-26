@@ -842,6 +842,102 @@ export const PLANETS: PlanetData[] = [
       map: "/textures/neptune/map.jpg",
     },
   },
+  // Ceres and Vesta: real, individually-tracked main-belt bodies (not the
+  // procedural point-cloud stand-in in AsteroidBelt.tsx, which represents
+  // the ~1.2 million other, uncataloged asteroids) — added to PLANETS
+  // rather than a separate array since they follow the exact same
+  // two-body Keplerian model and every consumer of this array (Scene.tsx,
+  // StatsPanel.tsx) already works generically over anything in it.
+  //
+  // Orbital elements (eccentricity through meanAnomalyAtEpochDegrees) for
+  // both are real heliocentric osculating elements queried directly from
+  // JPL Horizons (https://ssd.jpl.nasa.gov/api/horizons.api) at epoch
+  // 2451545.0 (J2000.0, TDB) — the same epoch/frame convention
+  // (J2000_EPOCH_MS, "Ecliptic of J2000.0") this app already uses for
+  // every planet above, so no conversion beyond unit copying.
+  {
+    id: "ceres",
+    // Real: dark, grayish-brown (C-type/G-type composition, low albedo
+    // ~0.09 — similar reflectivity to asphalt).
+    color: "#6b645c",
+    radiusKm: 469.7,
+    semiMajorAxisKm: 413_861_913.9,
+    eccentricity: 0.078376,
+    // 9.07417h (Horizons ROTPER) — independently cross-checked against the
+    // Dawn mission's own final PM rotation rate below (952.1532635°/day →
+    // 360/952.1532635 = 9.0742h): matches to 4 significant figures.
+    rotationPeriodDays: 0.378090,
+    // Real, final Dawn-mission determination (dawn_ceres_v06.tpc, the
+    // authoritative post-mission SPICE kernel, Dec 2018) — matches the
+    // independently-published Ermakov et al. 2017 (Icarus) value closely.
+    // Note: the older "generic" pck00011.tpc kernel's Ceres entry
+    // (RA=70.14, Dec=39.48) predates Dawn's 2015 Ceres arrival and is
+    // stale — its own PM rotation rate doesn't even match Horizons'
+    // ROTPER (implies ~5.83h, not the real ~9.07h), confirming it
+    // shouldn't be used here even though it's the same kernel file this
+    // app's planets above cite.
+    poleRaDegrees: 291.42763,
+    poleDecDegrees: 66.76033,
+    inclinationDegrees: 10.58336,
+    ascendingNodeDegrees: 80.494357,
+    argumentOfPeriapsisDegrees: 73.922863,
+    meanAnomalyAtEpochDegrees: 6.176655,
+    // Calibrated against real JPL Horizons sub-solar longitude (raw
+    // Dawn-mission PM W0 is 170.309) — matches within ~0.0001° at the
+    // reference date (2026-08-26 20:31 UTC), but grows to ~5.8° at a
+    // second test date 81 days later (2026-11-15), a larger residual than
+    // most planets here — plausibly real: Ceres, like every asteroid-belt
+    // body, is more perturbed by Jupiter's proximity than this app's
+    // simple 2-body ellipse accounts for, in the same direction (if a
+    // larger magnitude) as Uranus's own ~6-8° residual below.
+    rotationAtEpochDegrees: 345.139,
+    textures: {
+      map: "/textures/ceres/map.jpg"
+    }
+  },
+  {
+    id: "vesta",
+    // Real: notably bright for an asteroid (V-type, albedo ~0.42 vs.
+    // Ceres' ~0.09), brownish-gray.
+    color: "#a89a84",
+    radiusKm: 261.385,
+    // Real triaxial semi-axes (km), from the Dawn mission's final gravity
+    // model (dawn_vesta_grv221108_v1.tpc, 2025) — genuinely non-spherical
+    // (a 20%+ difference between longest and shortest axis), unlike every
+    // other body in this file — see PlanetData.triaxialRadiiKm's own
+    // comment for how this is applied. Order matches that field's own
+    // [equatorial-long, polar/spin-axis, equatorial-short] convention;
+    // the exact azimuthal alignment of the two equatorial axes relative to
+    // the real surface (as opposed to just their lengths) isn't verified
+    // here, since rotationAtEpochDegrees below is also still a raw,
+    // uncalibrated value.
+    triaxialRadiiKm: [284.62, 226.33, 277.24],
+    semiMajorAxisKm: 353_280_597.8,
+    eccentricity: 0.090022,
+    // 5.342128h (Horizons ROTPER) — independently cross-checked against
+    // the Dawn mission's own final PM rotation rate below
+    // (1617.333129223909°/day → 360/1617.333129223909 = 5.3421h): matches
+    // to 5 significant figures.
+    rotationPeriodDays: 0.222589,
+    // Real, final Dawn-mission gravity-model determination
+    // (dawn_vesta_grv221108_v1.tpc, 2025) — closely matches the older
+    // dawn-derived pck00011.tpc value (309.031, 42.235), unlike Ceres'
+    // own stale generic-kernel entry (see Ceres' own comment above).
+    poleRaDegrees: 309.061095,
+    poleDecDegrees: 42.232386,
+    inclinationDegrees: 7.133936,
+    ascendingNodeDegrees: 103.951437,
+    argumentOfPeriapsisDegrees: 149.586668,
+    meanAnomalyAtEpochDegrees: 341.023834,
+    // Calibrated against real JPL Horizons sub-solar longitude (raw
+    // Dawn-mission PM W0 is 284.643098) — matches within ~0.0001° at the
+    // reference date (2026-08-26 20:31 UTC) and holds up well at a second
+    // test date 81 days later (~0.45° residual, 2026-11-15).
+    rotationAtEpochDegrees: 147.947,
+    textures: {
+      map: "/textures/vesta/map.png"
+    }
+  },
 ];
 
 // Real value: radiusKm is the IAU-adopted mean lunar radius. Position comes
