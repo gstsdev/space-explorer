@@ -42,8 +42,16 @@ export type EclipseShadowConfig = {
 
 export const ECLIPSE_SHADOW_DEFAULTS: EclipseShadowConfig = {
   earth: {
-    penumbraScale: 1,
-    casterRadiusScale: 1,
+    // The Moon's geometric umbra is a near-point by the time it reaches
+    // Earth (see MoonSurface / TexturedSurface — umbraRadius clamps to ~0),
+    // so the true total-eclipse track is only ~100 km wide. These scales
+    // deliberately blow that up: casterRadiusScale gives the umbra a visible
+    // core and penumbraScale widens the soft partial-eclipse falloff around
+    // it, matched by eye against the DSCOVR/EPIC full-disc photo of the
+    // 8 Apr 2024 eclipse (where the readable dark blob is really deep
+    // penumbra).
+    penumbraScale: 4.65,
+    casterRadiusScale: 1.62,
     shadowStrength: 1,
   },
   moon: {
