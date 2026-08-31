@@ -323,6 +323,7 @@ export function Moon({
         ref={(el) => {
           group.current = el;
           if (el) {
+            el.userData.bodyId = moon.id;
             el.userData.focusDistance = radius * VIEW_MULTIPLIER;
             el.userData.minViewDistance = radius * MIN_VIEW_MULTIPLIER;
           }

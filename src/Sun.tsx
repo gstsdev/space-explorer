@@ -83,6 +83,7 @@ export function Sun({
       ref={(el) => {
         group.current = el;
         if (el) {
+          el.userData.bodyId = SUN_DATA.id;
           el.userData.focusDistance = SUN_RADIUS * VIEW_MULTIPLIER;
           el.userData.minViewDistance = SUN_RADIUS * MIN_VIEW_MULTIPLIER;
         }

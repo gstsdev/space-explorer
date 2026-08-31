@@ -8,6 +8,8 @@ import { SpeedControl } from "./ui/SpeedControl";
 import { StatsPanel } from "./ui/StatsPanel";
 import { Skybox } from "./Skybox";
 import { ViewControls } from "./ui/ViewControls";
+import { EclipseShadowDevTools } from "./dev/EclipseShadowDevTools";
+import { DevApi } from "./dev/DevApi";
 import { SUN_DATA } from "./astronomy";
 import type { QualityPreference } from "./quality";
 import {
@@ -96,7 +98,14 @@ export default function App() {
         />
         <CameraRig focusTarget={focusTarget} />
         <SimulationClock />
+        {import.meta.env.DEV && (
+          <DevApi focusTarget={focusTarget} onSelect={setSelectedId} />
+        )}
       </Canvas>
+      {/* Dev-only eclipse-shadow tuner (Ctrl/Cmd+Shift+D). This guard makes
+      the import unused in a production build, so the whole module is
+      tree-shaken out — see EclipseShadowDevTools' own comment. */}
+      {import.meta.env.DEV && <EclipseShadowDevTools />}
       {!pictureMode && (
         <>
           <SpeedControl />

@@ -5,6 +5,7 @@ import { Color, SRGBColorSpace, Vector3 } from "three";
 import { useTexture } from "@react-three/drei";
 import { KM_TO_UNITS } from "../astronomy";
 import type { PlanetAtmosphereData, PlanetTextures } from "../astronomy";
+import { eclipseShadowConfig } from "../eclipseShadowConfig";
 import { FRAME_PRIORITY } from "../framePriority";
 import { ATMOSPHERE_TERMINATOR_FADE_DOT, atmosphereIntensity } from "../atmosphereShading";
 
@@ -160,6 +161,9 @@ export function TexturedSurface({
   const shaderUniforms = useRef<{
     sunDirection: { value: Vector3 };
     eclipseCasterPosition?: { value: Vector3 };
+    eclipseCasterRadius?: { value: number };
+    eclipsePenumbraScale?: { value: number };
+    eclipseShadowStrength?: { value: number };
   } | null>(null);
 
   useFrame(() => {
@@ -167,6 +171,13 @@ export function TexturedSurface({
     shaderUniforms.current.sunDirection.value.copy(sunDirection.current);
     if (eclipseShadow && shaderUniforms.current.eclipseCasterPosition) {
       shaderUniforms.current.eclipseCasterPosition.value.copy(eclipseShadow.casterPositionObjectSpace.current);
+      // Live tuning knobs (src/eclipseShadowConfig.ts) — defaults leave the
+      // shadow exactly as the shader's own physically-derived geometry.
+      const tuning = eclipseShadowConfig.earth;
+      shaderUniforms.current.eclipseCasterRadius!.value =
+        eclipseShadow.casterRadiusKm * KM_TO_UNITS * tuning.casterRadiusScale;
+      shaderUniforms.current.eclipsePenumbraScale!.value = tuning.penumbraScale;
+      shaderUniforms.current.eclipseShadowStrength!.value = tuning.shadowStrength;
     }
   }, FRAME_PRIORITY.updateVisibility);
 
@@ -275,6 +286,10 @@ export function TexturedSurface({
         if (eclipseShadow) {
           shader.uniforms.eclipseCasterPosition = { value: new Vector3() };
           shader.uniforms.eclipseCasterRadius = { value: eclipseShadow.casterRadiusKm * KM_TO_UNITS };
+          // Live tuning knobs — see src/eclipseShadowConfig.ts. Both default
+          // to 1 (a no-op), driven per-frame from that mutable config above.
+          shader.uniforms.eclipsePenumbraScale = { value: 1 };
+          shader.uniforms.eclipseShadowStrength = { value: 1 };
 
           shader.vertexShader = shader.vertexShader
             .replace("#include <common>", "#include <common>\nvarying vec3 vObjectPosition;")
@@ -283,7 +298,7 @@ export function TexturedSurface({
           fragmentShader = fragmentShader
             .replace(
               "#include <common>",
-              "#include <common>\nvarying vec3 vObjectPosition;\nuniform vec3 eclipseCasterPosition;\nuniform float eclipseCasterRadius;",
+              "#include <common>\nvarying vec3 vObjectPosition;\nuniform vec3 eclipseCasterPosition;\nuniform float eclipseCasterRadius;\nuniform float eclipsePenumbraScale;\nuniform float eclipseShadowStrength;",
             )
             // Real ray-sphere shadow test — same core technique as
             // PlanetRing's own ring-shadow shader, generalized for a caster
@@ -291,45 +306,44 @@ export function TexturedSurface({
             // planet's ring, which is always centered on the planet it
             // shadows, the Moon sits off at its own position relative to
             // Earth — see eclipseCasterPosition's own doc comment above):
-            // the shadow sphere is centered at eclipseCasterPosition rather
-            // than at (0,0,0), so casterOffset (fragment relative to *that*
-            // center) stands in for PlanetRing's vRingLocalPosition. Also
-            // uses the caster's own real radius rather than its real
-            // (smaller, distance-tapering) umbra cone, same simplification
-            // as the ring shadow's own planetRadius.
+            // the shadow cone is centered on the axis through
+            // eclipseCasterPosition rather than through (0,0,0), so
+            // casterOffset (fragment relative to that center) stands in for
+            // PlanetRing's vRingLocalPosition.
             //
-            // Unlike the ring shadow, this one is deliberately *not* a hard
-            // edge: the ring shadow's own comment notes the sun's real
-            // angular size (~0.056° from Saturn) makes its penumbra a
-            // fraction of a percent of Saturn's radius, genuinely
-            // imperceptible — but at Earth-Moon range the same real
-            // half-angle (~0.25°, effectively the same as seen from Earth
-            // or the Moon) works out to a penumbra a few thousand km wide,
-            // comparable to the umbra itself, so a hard edge reads as
-            // visibly wrong here in a way it doesn't for the ring.
+            // Unlike the ring shadow, this one models the real *cone*
+            // rather than the caster's full radius, and is deliberately
+            // *not* a hard edge. The ring shadow's own comment notes the
+            // sun's real angular size (~0.056° from Saturn) makes both the
+            // cone taper and the penumbra a fraction of a percent of
+            // Saturn's radius over the ring span — genuinely imperceptible.
+            // At Earth↔Moon range the same real half-angle (~0.266°, the
+            // sun's angular radius, effectively equal from Earth or Moon)
+            // works out to ~1,800 km of taper and a comparable penumbra
+            // over the ~385,000 km throw — nearly a third of the caster's
+            // radius — so using the full radius and a hard edge both read
+            // as visibly wrong here, smearing the shadow far outside the
+            // real umbra.
             .replace(
               "vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + reflectedLight.directSpecular + reflectedLight.indirectSpecular + totalEmissiveRadiance;",
               `vec3 toEclipseSun = normalize(sunDirection);
               vec3 casterOffset = vObjectPosition - eclipseCasterPosition;
               float eb = dot(casterOffset, toEclipseSun);
-              float ec = dot(casterOffset, casterOffset) - eclipseCasterRadius * eclipseCasterRadius;
-              float eh = eb * eb - ec;
-              // Real perpendicular distance from the caster's center to the
-              // ray toward the sun (derived from eh/eb/eclipseCasterRadius
-              // above, valid whether or not the ray actually hits) minus the
-              // caster's own radius: negative once the ray passes through
-              // the sphere, zero exactly at its edge, growing positive
-              // outside it — the real quantity a soft shadow edge should be
-              // measured against, rather than the hard eh>0.0 boundary.
-              float closestApproach = sqrt(max(eclipseCasterRadius * eclipseCasterRadius - eh, 0.0));
-              float edgeDistance = closestApproach - eclipseCasterRadius;
-              // Real penumbra half-width at this fragment's real distance
-              // from the caster (abs(eb)): a soft shadow cone spreads out
-              // from the caster at roughly the sun's own real angular
-              // radius (~0.25° — the same, to a fraction of a degree,
-              // whether measured from Earth or the Moon) — 2*tan(0.25°).
-              float penumbraWidth = abs(eb) * 0.00873;
-              float inEclipseShadow = eb < 0.0 ? 1.0 - smoothstep(-penumbraWidth, penumbraWidth, edgeDistance) : 0.0;
+              // Perpendicular distance from the caster's centre to this
+              // fragment's ray toward the sun (the impact parameter) — the
+              // quantity the soft shadow edge is measured against.
+              float impactParameter = sqrt(max(dot(casterOffset, casterOffset) - eb * eb, 0.0));
+              // Umbra radius of the real shadow cone at this fragment's
+              // distance behind the caster (abs(eb)): the umbra shrinks by
+              // the sun's angular radius (~0.266°, tan ≈ 0.00464) times that
+              // distance. The real penumbra is ~2*sunTaper wide but its
+              // dimming is perceptually negligible and the lit surface blows
+              // out to white regardless, so the edge reads nearly crisp —
+              // just a thin soft band. eclipsePenumbraScale widens it.
+              float sunTaper = abs(eb) * 0.00464;
+              float umbraRadius = max(eclipseCasterRadius - sunTaper, 0.0);
+              float penumbraRadius = umbraRadius + 0.25 * sunTaper * eclipsePenumbraScale;
+              float inEclipseShadow = eb < 0.0 ? 1.0 - smoothstep(umbraRadius, penumbraRadius, impactParameter) : 0.0;
               // Suppresses only the *direct* light terms (as if the sun
               // itself switched off for this fragment), leaving indirect/
               // ambient and emissive untouched — an eclipsed, sun-facing
@@ -337,7 +351,7 @@ export function TexturedSurface({
               // geometric night side (which is exactly this: directDiffuse/
               // directSpecular ≈ 0 from the N·L clamp, indirectDiffuse and
               // emissive unaffected), not an arbitrary darker/flatter tint.
-              float directLightFactor = 1.0 - inEclipseShadow;
+              float directLightFactor = 1.0 - inEclipseShadow * eclipseShadowStrength;
 
               vec3 outgoingLight = (reflectedLight.directDiffuse + reflectedLight.directSpecular) * directLightFactor + reflectedLight.indirectDiffuse + reflectedLight.indirectSpecular + totalEmissiveRadiance;`,
             );
@@ -347,6 +361,9 @@ export function TexturedSurface({
         shaderUniforms.current = shader.uniforms as unknown as {
           sunDirection: { value: Vector3 };
           eclipseCasterPosition?: { value: Vector3 };
+          eclipseCasterRadius?: { value: number };
+          eclipsePenumbraScale?: { value: number };
+          eclipseShadowStrength?: { value: number };
         };
       }}
     />
